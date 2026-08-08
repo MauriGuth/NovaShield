@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -44,6 +44,34 @@ describe('ShieldBlocklist.swift · las dos copias son idénticas', () => {
       const source = readFileSync(join(REPO_ROOT, rel), 'utf8');
       expect(source).not.toContain('import ExpoModulesCore');
     }
+  });
+
+  it('el podspec NO se llama igual que la app (colisión de schemes)', () => {
+    // CocoaPods genera un scheme compartido por cada pod local. Si el pod se
+    // llama igual que la app, el workspace queda con dos schemes homónimos y
+    // `xcodebuild -scheme NovaShield` puede resolver el del POD: archiva
+    // libNovaShield.a, el .xcarchive sale sin ningún .app adentro, las
+    // extensiones no se compilan y el export muere con "exportOptionsPlist
+    // error for key 'method': expected one {}". Ningún mensaje de esa cadena
+    // menciona la palabra "scheme", así que cuesta horas encontrarlo.
+    const podspecs = readdirSync(
+      join(REPO_ROOT, 'apps/mobile/modules/nova-shield/ios'),
+    ).filter((f) => f.endsWith('.podspec'));
+    expect(podspecs).toHaveLength(1);
+
+    const source = readFileSync(
+      join(REPO_ROOT, 'apps/mobile/modules/nova-shield/ios', podspecs[0]),
+      'utf8',
+    );
+    const podName = /s\.name\s*=\s*'([^']+)'/.exec(source)?.[1];
+
+    const appConfig = JSON.parse(
+      readFileSync(join(REPO_ROOT, 'apps/mobile/app.json'), 'utf8'),
+    ) as { expo: { name: string } };
+    const schemeName = appConfig.expo.name.replace(/[^A-Za-z0-9]/g, '');
+
+    expect(podName).toBeTruthy();
+    expect(podName).not.toBe(schemeName);
   });
 
   it('los archivos de los targets no importan ExpoModulesCore', () => {

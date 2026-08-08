@@ -3,7 +3,16 @@ Pod::Spec.new do |s|
   # de un módulo que no tenga podspec (resolveModuleAsync devuelve null si no
   # encuentra ninguno). Sin este archivo, el escudo simplemente no existiría en
   # iOS y no habría ningún error que lo indicara.
-  s.name           = 'NovaShield'
+  #
+  # EL NOMBRE NO PUEDE SER 'NovaShield': colisiona con el scheme de la app.
+  # CocoaPods genera un scheme compartido por cada pod local, así que quedaban
+  # dos schemes llamados igual en el workspace y `xcodebuild -scheme NovaShield`
+  # resolvía el del POD. Resultado: archivaba libNovaShield.a en vez de la app,
+  # el archive salía sin ningún .app adentro, las extensiones nunca se
+  # compilaban, y el export moría con "exportOptionsPlist error for key
+  # 'method': expected one {}" — el conjunto vacío es Xcode diciendo que no
+  # encontró nada distribuible. Nada de eso menciona la palabra "scheme".
+  s.name           = 'NovaShieldNative'
   s.version        = '0.1.0'
   s.summary        = 'Escudo DNS y Protección de Mensajes de Nova Shield'
   s.description    = 'Módulo nativo del Escudo DNS (NEPacketTunnelProvider) y la Protección de Mensajes.'
