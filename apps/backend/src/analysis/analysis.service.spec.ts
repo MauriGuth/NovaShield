@@ -94,4 +94,17 @@ describe('AnalysisService', () => {
     const result = await service.analyze('https://empresa-seria.click/');
     expect(result.verdict).toBe('safe');
   });
+
+  it('un legit del LLM NO pisa una señal crítica determinista (falso negativo)', async () => {
+    llm.isEnabled = true;
+    llm.classify.mockResolvedValue({
+      intent: 'legit',
+      confidence: 0.95,
+      rationale: 'Dice ser el sitio oficial.',
+    });
+    // Imitación de marca = razón crítica: el LLM no puede declararlo seguro.
+    const result = await service.analyze('https://mercadopago-seguridad.top/ingresar');
+    expect(result.verdict).not.toBe('safe');
+    expect(result.reasons.map((r) => r.code)).toContain('BRAND_IMPERSONATION');
+  });
 });

@@ -5,7 +5,19 @@ import type { AnalyzeResponse } from '@novashield/shared';
  * probar en un dispositivo físico exportar EXPO_PUBLIC_API_URL con la IP de
  * la máquina (p. ej. http://192.168.0.10:3000).
  */
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000';
+// La URL del backend se inlinea en tiempo de build. En producción DEBE venir
+// de EXPO_PUBLIC_API_URL (https); el fallback a localhost es solo para dev.
+const API_URL =
+  process.env.EXPO_PUBLIC_API_URL ??
+  (__DEV__ ? 'http://localhost:3000' : '');
+
+if (!API_URL) {
+  // Falla temprano y visible en builds de producción sin la variable, en vez
+  // de mostrarle al usuario un engañoso "revisá tu conexión" en cada análisis.
+  throw new Error(
+    'EXPO_PUBLIC_API_URL no está configurada. Definila (https://…) antes de generar el build.',
+  );
+}
 
 export class ApiError extends Error {
   constructor(
@@ -16,25 +28,24 @@ export class ApiError extends Error {
   }
 }
 
-export async function analyzeUrl(text: string): Promise<AnalyzeResponse> {
-  // AbortController manual: AbortSignal.timeout no está garantizado en Hermes.
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 25_000);
-
+export async function analyzeUrl(
+  text: string,
+  signal?: AbortSignal,
+): Promise<AnalyzeResponse> {
   let res: Response;
   try {
     res = await fetch(`${API_URL}/v1/analyze`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ url: text }),
-      signal: controller.signal,
+      signal,
     });
-  } catch {
+  } catch (err) {
+    // Propagamos aborts para que la pantalla los distinga de un error de red.
+    if (err instanceof DOMException && err.name === 'AbortError') throw err;
     throw new ApiError(
       'No pudimos conectar con el servidor de análisis. Revisá tu conexión e intentá de nuevo.',
     );
-  } finally {
-    clearTimeout(timer);
   }
 
   if (!res.ok) {

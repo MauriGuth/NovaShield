@@ -8,11 +8,17 @@
     "packages/*"
   ],
   "scripts": {
+    "build:shared": "npm run build --workspace @novashield/shared",
+    "prebackend": "npm run build:shared",
     "backend": "npm run start:dev --workspace apps/backend",
+    "prebackend:build": "npm run build:shared",
     "backend:build": "npm run build --workspace apps/backend",
+    "prebackend:test": "npm run build:shared",
     "backend:test": "npm run test --workspace apps/backend",
+    "premobile": "npm run build:shared",
     "mobile": "npm run start --workspace apps/mobile",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "pretypecheck": "npm run build:shared",
+    "typecheck": "npm run typecheck --workspace apps/backend && npm run typecheck --workspace apps/mobile"
   },
   "engines": {
     "node": ">=20"

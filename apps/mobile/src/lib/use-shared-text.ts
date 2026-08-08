@@ -8,6 +8,8 @@ type ShareIntentModule = typeof import('expo-share-intent');
 
 let shareIntent: ShareIntentModule | null = null;
 try {
+  // require condicional a propósito: el módulo nativo no existe en Expo Go.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   shareIntent = require('expo-share-intent') as ShareIntentModule;
 } catch {
   shareIntent = null;
@@ -24,7 +26,6 @@ export function useSharedText(): SharedText {
   if (!shareIntent) {
     return { sharedText: null, clearSharedText: () => {} };
   }
-  // eslint-disable-next-line react-hooks/rules-of-hooks
   const { hasShareIntent, shareIntent: intent, resetShareIntent } =
     shareIntent.useShareIntent();
 

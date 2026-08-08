@@ -1,9 +1,9 @@
 import {
   extractUrl,
-  isForbiddenHost,
   normalizeForLookup,
   parentDomains,
 } from './url-utils';
+import { isForbiddenHost, isPrivateIp } from './ssrf';
 
 describe('extractUrl', () => {
   it('extrae una URL con esquema desde texto pegado', () => {
@@ -62,15 +62,50 @@ describe('isForbiddenHost', () => {
     '192.168.1.1',
     '172.16.0.1',
     '169.254.169.254',
+    '100.64.0.1',
     'servicio.internal',
+    // Literales IPv6 que evadían la guarda vieja (SSRF a metadata/localhost):
+    '[::1]',
+    '[::]',
+    '[::ffff:169.254.169.254]',
+    '[::ffff:127.0.0.1]',
+    '[fe80::1]',
+    '[fc00::1]',
+    '[fd12:3456::1]',
   ])('bloquea %s', (host) => {
     expect(isForbiddenHost(host)).toBe(true);
   });
 
-  it.each(['google.com', '8.8.8.8', 'mercadopago.com.ar'])(
+  it.each(['google.com', '8.8.8.8', 'mercadopago.com.ar', '[2001:4860:4860::8888]'])(
     'permite %s',
     (host) => {
       expect(isForbiddenHost(host)).toBe(false);
+    },
+  );
+});
+
+describe('isPrivateIp', () => {
+  it.each([
+    '127.0.0.1',
+    '10.1.2.3',
+    '169.254.169.254',
+    '192.168.0.1',
+    '172.20.0.1',
+    '100.100.0.1',
+    '::1',
+    '::',
+    '::ffff:127.0.0.1',
+    '::ffff:a9fe:a9fe',
+    'fe80::1',
+    'fc00::1',
+  ])('marca %s como privada', (ip) => {
+    expect(isPrivateIp(ip)).toBe(true);
+  });
+
+  it.each(['8.8.8.8', '1.1.1.1', '200.42.0.1', '2001:4860:4860::8888'])(
+    'marca %s como pública',
+    (ip) => {
+      expect(isPrivateIp(ip)).toBe(false);
     },
   );
 });

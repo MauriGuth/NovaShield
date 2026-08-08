@@ -126,9 +126,18 @@ export class AnalysisService {
             detail: verdict.rationale,
           });
         } else if (verdict.intent === 'legit' && verdict.confidence >= 0.7) {
-          // Señal exculpatoria: baja el ruido de heurísticas débiles,
-          // nunca pisa un match de listas o Web Risk.
-          score = Math.min(score, RISK_THRESHOLDS.suspicious - 5);
+          // Señal exculpatoria acotada: baja el ruido de heurísticas DÉBILES
+          // (solo warnings/info, p. ej. un TLD barato en un sitio real). Si
+          // alguna capa determinista encendió una señal CRÍTICA (imitación de
+          // marca, punycode, IP, listas), el LLM no rebaja nada: el texto de
+          // la URL es atacante-controlado y no tiene autoridad para declarar
+          // "seguro" lo que las capas locales ya marcaron.
+          const hasCriticalSignal = reasons.some(
+            (r) => r.severity === 'critical',
+          );
+          if (!hasCriticalSignal) {
+            score = Math.min(score, RISK_THRESHOLDS.suspicious - 5);
+          }
         }
       }
     }

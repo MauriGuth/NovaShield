@@ -53,6 +53,24 @@ const URGENCY_KEYWORDS = [
   'actualiza', 'regalo', 'reintegro', 'devolucion',
 ];
 
+/**
+ * ¿La etiqueta de dominio `label` imita a `token`?
+ *
+ * - Token largo (≥6): una colisión casual es implausible, así que alcanza con
+ *   que aparezca como subcadena de la etiqueta desenmascarada
+ *   (mercadopagoarg, mercadopag0, mercadopago-seguridad → todos matchean).
+ * - Token corto (≤5, como "arca", "macro", "bbva"): se exige que sea una
+ *   etiqueta o un segmento separado por guiones completo, no un fragmento de
+ *   una palabra más larga — así "marca.com", "macrotrends.com" y "comarca.com"
+ *   no disparan un falso positivo.
+ */
+function labelImitatesToken(label: string, token: string): boolean {
+  const compact = unmask(label.replace(/-/g, ''));
+  if (token.length >= 6) return compact.includes(token);
+  const segments = label.split('-').map(unmask);
+  return compact === token || segments.includes(token);
+}
+
 /** Sustituciones típicas de caracteres parecidos para camuflar una marca. */
 function unmask(text: string): string {
   return text
@@ -192,13 +210,21 @@ export class HeuristicsService {
   }
 
   private detectBrandImpersonation(host: string) {
-    const compactHost = unmask(host.replace(/[-.]/g, ''));
+    // Se compara por ETIQUETAS de dominio, no por subcadena cruda del host
+    // entero: un `includes('arca')` marcaba marca.com o comarca.com.ar, y
+    // `includes('macro')` marcaba macrotrends.com. Una imitación real inserta
+    // la marca como una etiqueta (o combinada con separadores) — p. ej.
+    // "mercadopago-premios.top" o "mercadopag0.com" —, no como fragmento de
+    // una palabra más larga y no relacionada.
+    const labels = host.split('.');
     for (const brand of BRANDS) {
-      if (!compactHost.includes(brand.token)) continue;
       const isOfficial = brand.official.some((official) =>
         parentDomains(host).includes(official),
       );
-      if (!isOfficial) return brand;
+      if (isOfficial) continue;
+
+      const matches = labels.some((label) => labelImitatesToken(label, brand.token));
+      if (matches) return brand;
     }
     return null;
   }

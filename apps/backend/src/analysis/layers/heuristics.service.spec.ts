@@ -31,6 +31,27 @@ describe('HeuristicsService', () => {
     );
   });
 
+  it.each([
+    'https://www.marca.com/futbol', // diario deportivo — contiene "arca"
+    'https://www.macrotrends.net/', // finanzas — contiene "macro"
+    'https://comarca-turismo.com.ar/', // contiene "arca"
+    'https://barca-fans.com/', // contiene "arca"
+  ])('no marca imitación por subcadena en %s', (url) => {
+    expect(analyze(url).reasons.map((r) => r.code)).not.toContain(
+      'BRAND_IMPERSONATION',
+    );
+  });
+
+  it.each([
+    'https://arca-tramites.top/acceso', // token corto como segmento
+    'https://macro-seguridad.top/login', // token corto como segmento
+    'https://mercadopagoarg.com/pago', // token largo sin guiones
+  ])('sí marca imitación real en %s', (url) => {
+    expect(analyze(url).reasons.map((r) => r.code)).toContain(
+      'BRAND_IMPERSONATION',
+    );
+  });
+
   it('marca acortadores', () => {
     const result = analyze('https://bit.ly/premi0-arg');
     expect(result.reasons.map((r) => r.code)).toContain('SHORTENED_URL');
