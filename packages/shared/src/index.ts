@@ -6,6 +6,8 @@
 export * from './domain';
 export * from './shield';
 export * from './messages';
+export * from './device';
+export * from './family';
 
 /** Nivel de veredicto sobre un enlace analizado. */
 export type VerdictLevel = 'malicious' | 'suspicious' | 'safe' | 'unknown';

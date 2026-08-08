@@ -1,4 +1,5 @@
 process.env.BLOCKLIST_DISABLE_REFRESH = '1';
+process.env.FAMILY_DB_PATH = ':memory:';
 
 import { ValidationPipe, INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';

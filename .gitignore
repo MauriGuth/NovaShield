@@ -35,3 +35,6 @@ coverage/
 .idea/
 .vscode/
 *.swp
+
+# Base de datos local del backend (dev): en producción se usa DATABASE_URL
+apps/backend/data/

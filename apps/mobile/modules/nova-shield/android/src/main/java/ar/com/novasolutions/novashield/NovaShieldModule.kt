@@ -122,6 +122,20 @@ class NovaShieldModule : Module(), ShieldBus.Listener {
 
     Function("getBlockedCount") { ShieldBus.blockedCount }
 
+    // — Escáner del Dispositivo —
+
+    Function("getDeviceSecuritySignals") { DevicePosture.collect(context) }
+
+    AsyncFunction("openDeviceSettings") { section: String ->
+      val action = when (section) {
+        "developer" -> Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS
+        "accessibility" -> Settings.ACTION_ACCESSIBILITY_SETTINGS
+        "update" -> Settings.ACTION_DEVICE_INFO_SETTINGS
+        else -> Settings.ACTION_SECURITY_SETTINGS
+      }
+      context.startActivity(Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
     // — Protección de Mensajes —
 
     Function("isMessageProtectionEnabled") {

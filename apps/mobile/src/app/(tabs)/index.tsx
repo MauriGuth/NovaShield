@@ -1,5 +1,6 @@
 import { Link } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { AppState, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -24,6 +25,8 @@ export default function HomeScreen() {
   const alerts = useShield((s) => s.alerts);
   const shieldEnabled = useShield((s) => s.shieldEnabled);
   const totalBlocked = useShield((s) => s.totalBlocked);
+  const deviceScan = useShield((s) => s.deviceScan);
+  const family = useShield((s) => s.family);
   const messageProtectionEnabled =
     NovaShield?.isMessageProtectionEnabled() ?? false;
   const { score, pendingActions } = computeScore({
@@ -31,7 +34,25 @@ export default function HomeScreen() {
     alerts,
     shieldEnabled,
     messageProtectionEnabled,
+    deviceScan,
   });
+
+  // Una semana: pasado ese plazo el escaneo guardado ya no describe
+  // necesariamente al teléfono de hoy. El reloj se lee en un estado que se
+  // refresca al volver al frente, no en el render: `Date.now()` durante el
+  // render es impuro y el compilador de React lo rechaza (con razón — haría
+  // que dos renders del mismo estado devuelvan cosas distintas).
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') setNow(Date.now());
+    });
+    return () => sub.remove();
+  }, []);
+
+  const deviceScanIsStale =
+    deviceScan !== null &&
+    now - new Date(deviceScan.scannedAt).getTime() > 7 * 24 * 60 * 60 * 1000;
 
   const scoreColor =
     score >= 80 ? theme.accent : score >= 50 ? theme.warn : theme.danger;
@@ -90,6 +111,68 @@ export default function HomeScreen() {
                   {shieldEnabled
                     ? `${totalBlocked} ${totalBlocked === 1 ? 'sitio bloqueado' : 'sitios bloqueados'} hasta ahora.`
                     : 'Bloquea sitios de estafa en todas tus apps, sin que hagas nada.'}
+                </ThemedText>
+              </ThemedView>
+            </Pressable>
+          </Link>
+
+          <Link href="/dispositivo" asChild>
+            <Pressable>
+              <ThemedView type="backgroundElement" style={styles.shieldCard}>
+                <View style={styles.shieldRow}>
+                  <View
+                    style={[
+                      styles.shieldDot,
+                      {
+                        backgroundColor: !deviceScan
+                          ? theme.textSecondary
+                          : deviceScan.score >= 80
+                            ? theme.accent
+                            : deviceScan.score >= 50
+                              ? theme.warn
+                              : theme.danger,
+                      },
+                    ]}
+                  />
+                  <ThemedText type="smallBold">
+                    {deviceScan
+                      ? `Tu teléfono: ${deviceScan.score}/100`
+                      : 'Revisá tu teléfono'}
+                  </ThemedText>
+                </View>
+                <ThemedText type="small" themeColor="textSecondary">
+                  {!deviceScan
+                    ? 'Revisamos cómo está configurado, sin que salga nada del equipo.'
+                    : deviceScan.checks.some((c) => c.status !== 'ok')
+                      ? 'Encontramos cosas para mejorar en la configuración.'
+                      : deviceScanIsStale
+                        ? // El escaneo queda persistido, así que sin este chequeo la
+                          // home seguiría afirmando "está todo bien" con una foto de
+                          // hace semanas, tomada antes de que el usuario cambiara
+                          // cualquier cosa en Ajustes.
+                          'La última revisión dio bien, pero ya pasó un tiempo. Entrá para revisarlo de nuevo.'
+                        : 'La configuración de seguridad está bien.'}
+                </ThemedText>
+              </ThemedView>
+            </Pressable>
+          </Link>
+
+          <Link href="/familia" asChild>
+            <Pressable>
+              <ThemedView type="backgroundElement" style={styles.shieldCard}>
+                <View style={styles.shieldRow}>
+                  <View
+                    style={[
+                      styles.shieldDot,
+                      { backgroundColor: family ? theme.accent : theme.textSecondary },
+                    ]}
+                  />
+                  <ThemedText type="smallBold">Modo Familia</ThemedText>
+                </View>
+                <ThemedText type="small" themeColor="textSecondary">
+                  {family
+                    ? 'Mirá cómo están protegidos los tuyos.'
+                    : 'Enterate si tus viejos o tus hijos están protegidos, sin espiarlos.'}
                 </ThemedText>
               </ThemedView>
             </Pressable>

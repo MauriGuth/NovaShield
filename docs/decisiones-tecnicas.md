@@ -58,6 +58,51 @@ La revisión de Fase 2 (18 agentes, 12 hallazgos confirmados) encontró un mismo
 
 `normalizeText` descompone la ñ a n (`contraseña` → `contrasena`). Es deliberado y los patrones se escriben así.
 
+## Escáner del Dispositivo (Fase 3) — qué se puede leer y qué no
+
+Todo el escaneo es on-device: las señales se leen con APIs públicas sin permisos y se evalúan en `packages/shared/src/device.ts`. Nada de esto sale del teléfono; lo único que puede viajar (y solo con Modo Familia activo) es el **score numérico**.
+
+| Señal | Android | iOS |
+|---|---|---|
+| Bloqueo de pantalla | `KeyguardManager.isDeviceSecure()` (API 23+, sin permiso) | `LAContext.canEvaluatePolicy(.deviceOwnerAuthentication)` |
+| Biometría | `PackageManager.hasSystemFeature(FINGERPRINT/FACE)` | `canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics)` |
+| Parche de seguridad | `Build.VERSION.SECURITY_PATCH` (API 23+) | — (iOS no lo expone; se usa la versión del sistema) |
+| Accesibilidad abusada | `Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES` | — (iOS no tiene equivalente) |
+| Root / jailbreak | `Build.TAGS` + binarios `su` (heurística propia) | Rutas de Cydia/Sileo + escritura fuera del sandbox |
+
+**Opciones de desarrollador y depuración USB: NO se reportan.** Las claves existen y se leen sin permiso, pero la documentación de `Settings.Global` dice hoy que `DEVELOPMENT_SETTINGS_ENABLED` y `ADB_ENABLED` *"will always return 0 for all third-party apps"*. Mostrar un tilde verde de "sin depuración USB" sobre un valor que la app no puede verificar sería precisamente la falsa tranquilidad que este producto no puede dar. Los campos siguen en el contrato, pero `undefined` significa "no sabemos" y nunca genera un chequeo en verde.
+
+Otras restricciones verificadas:
+
+- **`canEvaluatePolicy` no muestra ningún diálogo** (solo `evaluatePolicy` lo hace) y Apple advierte explícitamente que su resultado **no debe cachearse**: el escáner re-evalúa en cada apertura.
+- **`NSFaceIDUsageDescription` es obligatoria** en cualquier proyecto que use biometría, aunque solo se llame `canEvaluatePolicy`. Declarada en `app.json`.
+- **No se usa `canOpenURL("cydia://")`**: exigiría declarar el esquema en `LSApplicationQueriesSchemes`, que queda visible para cualquiera que inspeccione el binario, y sin declararlo devuelve `false` siempre — o sea que no serviría de nada.
+- **`QUERY_ALL_PACKAGES` no se usa ni se necesita**: ninguna señal consulta `PackageManager` por apps instaladas. Play lo trata como permiso de alto riesgo con formulario de declaración; evitarlo saca un motivo de fricción en la revisión.
+- **Play Integrity API es opcional**, no obligatoria, y su verdicto se valida server-side — incompatible con la promesa "nada se sube". La detección de root/jailbreak es best-effort y se le presenta al usuario como *indicio*, nunca como certeza. La app **informa, nunca bloquea**.
+- Umbrales de "sistema desactualizado": última estable hoy es **iOS 26.6** y **Android 16 (API 36)**. Conviene que el umbral se sirva desde el backend en vez de hardcodearse, porque envejece solo.
+
+## Modo Familia (Fase 3) — por qué NO es una app de monitoreo
+
+La política de **Stalkerware** de Google Play define stalkerware como código que *"collects personal or sensitive user data from a device and transmits the data to a third party for monitoring purposes"*, y solo acepta "monitoring apps" en dos formas: padres→hijos y empresa→empleados. El punto que decide el diseño: *"These apps cannot be used to track anyone else (a spouse, for example) even with their knowledge and permission"*. Si Play nos clasificara como monitoring app, compartir entre adultos quedaría prohibido **aunque haya consentimiento**.
+
+Por eso Nova Shield **no es** una app de monitoreo, y el diseño lo sostiene:
+
+- Cada integrante se une tipeando el código en **su propio** teléfono. No existe forma de agregar a alguien desde otro dispositivo.
+- Se comparte **el estado de protección propio**, no el comportamiento: escudo on/off, score del dispositivo, contadores. Nunca dominios, mensajes ni ubicación.
+- Es **simétrico**: todos ven de todos exactamente lo mismo. No hay rol de "observador oculto" ni vista privilegiada.
+- Se sale cuando se quiera, desde la propia app, y al salir se borra el estado compartido.
+- **Regla de marketing, no solo de código**: nunca posicionar la app con lenguaje de vigilancia ("monitoreá a tu familia", "controlá el teléfono de tus hijos"). Eso solo lo empujaría a la categoría que la política restringe. El encuadre es *compartir tranquilidad*, no vigilar.
+
+Consecuencias prácticas: no corresponde declarar el flag `isMonitoringTool` (es obligatorio solo para monitoring apps) y conviene declarar el target audience como **18+** en Play Console, para no caer en los Families Policy Requirements. Riesgo residual anotado: la clasificación final la hace el revisor, no la documentación.
+
+En App Store no hay política equivalente; aplican 5.1.1 (consentimiento y forma accesible de revocarlo — el botón de salir) y 5.1.2(i) (no usar ni compartir datos personales de otro sin permiso). El Modo Familia no es MDM (5.5) porque no administra ni controla el dispositivo de nadie.
+
+### Ley 25.326 (Argentina)
+
+El estado del escudo, el score y los contadores **son datos personales** (art. 2) asociados a una persona identificada dentro del grupo, aunque **no son datos sensibles** (no están en la lista cerrada del art. 2), así que rige el régimen general y no el agravado del art. 7.
+
+El consentimiento del art. 5 debe ser "libre, expreso e informado"; tipear el código en el propio teléfono puede valer como ese medio equiparable **si** antes se muestra la información del art. 6. Por eso la pantalla de unión enumera, antes de confirmar: responsable (Nova Solutions SAS, Neuquén), finalidad, qué datos exactamente se comparten y cuáles nunca, quiénes los ven, que sumarse es voluntario y que no hace falta para usar el resto de la app, y cómo ejercer acceso, rectificación y supresión (salir del grupo). Pendiente antes del lanzamiento: registro auditable del consentimiento (timestamp + versión del texto aceptado) y la política de privacidad publicada.
+
 ## Fuentes de amenazas — licencias verificadas
 
 | Fuente | Licencia | Uso |
@@ -90,8 +135,8 @@ Regla del código: PhishTank indexa la URL completa (host+path+query). Nunca ind
 |---|---|---|
 | 0 | Validación, diseño, trámites (cuenta Apple Organization, Play Console, Web Risk) | En curso |
 | 1 | **MVP**: Escáner de Enlaces + Score + Centro de Alertas (iOS/Android) | Hecho |
-| 2 | **Escudo DNS** (packet tunnel + VpnService) + **Protección de Mensajes** | Este repo — falta validar en dispositivo real |
-| 3 | Escáner del dispositivo + Modo Familia | Pendiente |
+| 2 | **Escudo DNS** (packet tunnel + VpnService) + **Protección de Mensajes** | Hecho — falta validar en dispositivo real |
+| 3 | **Escáner del Dispositivo + Modo Familia** | Este repo — falta validar en dispositivo real |
 | 4 | Monetización (freemium), publicación, marketing | Pendiente |
 
 ## Seguridad del backend (endpoint público)
@@ -114,3 +159,6 @@ Regla del código: PhishTank indexa la URL completa (host+path+query). Nunca ind
 5. Dependencia de mantenedores individuales (`expo-share-intent`, `expo-apple-targets`) → versiones pinneadas, plan B de config plugins propios.
 6. **El código nativo de Fase 2 nunca corrió en un dispositivo.** Se verificó lo verificable sin toolchain (autolinking resuelve módulo y clase, prebuild registra los targets, el matching de hashes se reprodujo contra el binario real), pero el packet tunnel de iOS, el `VpnService` y el listener de notificaciones necesitan QA en hardware antes de prometer nada.
 7. La sincronización semanal baja la lista completa (1,3 MB). Con más usuarios hay que implementar deltas o el costo de egress crece linealmente.
+8. **Clasificación del Modo Familia en Play**: la política no se pronuncia sobre nuestro caso exacto (compartir el estado propio entre adultos con consentimiento). El diseño está construido para quedar fuera de la definición de monitoring app, pero la decisión final es del revisor → tener listo el video demo mostrando el flujo de unión voluntaria y la simetría.
+9. **El esquema de la base se crea con `synchronize`**, apagado por defecto en PostgreSQL (`FAMILY_DB_SYNC=1` para el primer deploy). Antes de tener datos de usuarios reales hay que pasar a migraciones de TypeORM.
+10. Falta el registro auditable del consentimiento (art. 5/6 de la Ley 25.326) y la política de privacidad publicada: son bloqueantes de publicación, no de desarrollo.

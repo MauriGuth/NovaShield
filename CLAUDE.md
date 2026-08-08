@@ -7,7 +7,8 @@ Monorepo npm workspaces: `apps/mobile` (Expo SDK 57 + expo-router, más `modules
 - `npm install` en la raíz (nunca dentro de un workspace suelto).
 - Backend: `npm run backend` (dev) · `npm run backend:test` · `npm run backend:build`.
 - Mobile: `npm run mobile` · `npm run typecheck --workspace apps/mobile`.
-- Endpoints (prefijo global `v1`): `POST /v1/analyze`, `POST /v1/messages/analyze`, `GET /v1/shield/metadata`, `GET /v1/shield/blocklist`, `GET /v1/health`.
+- Endpoints (prefijo global `v1`): `POST /v1/analyze`, `POST /v1/messages/analyze`, `GET /v1/shield/metadata`, `GET /v1/shield/blocklist`, `POST /v1/family`, `POST /v1/family/join`, `GET /v1/family/me`, `PUT /v1/family/me/status`, `POST /v1/family/leave`, `GET /v1/health`.
+- Persistencia: TypeORM con better-sqlite3 en dev/tests (`FAMILY_DB_PATH`, `:memory:` en e2e) y PostgreSQL con `DATABASE_URL` en producción. Usar SOLO tipos de columna portables entre ambos (nada de `uuid`, `timestamptz`, `enum` como tipo de columna).
 - El código nativo no se compila acá. Lo verificable sin toolchain: `npx expo-modules-autolinking search -p android` / `-p apple` (resuelve módulo y clase) y `npx expo config --type prebuild` (targets registrados).
 
 ## Reglas del proyecto
@@ -29,4 +30,7 @@ Monorepo npm workspaces: `apps/mobile` (Expo SDK 57 + expo-router, más `modules
 - **Nunca fail-open.** Si una pieza del escudo no puede operar (lista vacía, descarga corrupta, fuentes sin cargar), tiene que negarse a operar de forma visible (503, estado `inactive`, veredicto `unknown`) — jamás seguir "activa" sin bloquear ni declarar `safe` sin haber verificado. Ver la sección de la revisión adversarial en docs/decisiones-tecnicas.md.
 - Los servicios de Android que el sistema arranca solo (VpnService sticky, NotificationListener) no pueden asumir que JS cargó nada: siempre `Blocklist.ensureLoaded()` antes de operar.
 - En iOS la app y las extensiones son procesos distintos con singletons distintos: cambiar la lista exige publicar la versión en el App Group y avisar al túnel (`sendProviderMessage`).
+- **El Modo Familia comparte SOLO booleanos, contadores y el score** (`FamilyMemberStatus`). Agregar ahí un dominio, un texto de mensaje o una ubicación rompe la promesa del producto y además arriesga que Play clasifique la app como stalkerware — lo que prohibiría compartir entre adultos aunque haya consentimiento. Nunca posicionar el feature con lenguaje de vigilancia.
+- El escáner del dispositivo **no afirma lo que no puede verificar**: `Settings.Global.ADB_ENABLED` y `DEVELOPMENT_SETTINGS_ENABLED` siempre devuelven 0 para apps de terceros, así que esas señales no se reportan. Una señal `undefined` nunca puede producir un chequeo en verde.
+- El escáner es on-device y sin red: no agregar ningún fetch en `device-scan.ts` ni en `DevicePosture.{kt,swift}`.
 - Los scripts de la raíz recompilan `packages/shared` con hooks `pre*`: si agregás un script nuevo que consuma el paquete, agregá su `pre<script>` correspondiente.

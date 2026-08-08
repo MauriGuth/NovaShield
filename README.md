@@ -2,7 +2,7 @@
 
 App móvil de ciberseguridad personal contra estafas, fraudes y hackeos (iOS & Android), de Nova Solutions. Analiza enlaces antes de que los abras, vigila la red y detecta mensajes sospechosos — avisando en el momento, antes de que el daño ocurra.
 
-Estado: **Fase 2** — Escudo DNS + Protección de Mensajes, sobre el MVP de Fase 1 (Escáner de Enlaces + Score de Seguridad + Centro de Alertas). Ver [hoja de ruta](docs/decisiones-tecnicas.md#hoja-de-ruta).
+Estado: **Fase 3** — Escáner del Dispositivo + Modo Familia, sobre el Escudo DNS y la Protección de Mensajes de Fase 2 y el MVP de Fase 1 (Escáner de Enlaces + Score + Centro de Alertas). Ver [hoja de ruta](docs/decisiones-tecnicas.md#hoja-de-ruta).
 
 ## Estructura
 
@@ -75,6 +75,27 @@ En el dispositivo:
 
 - **Android** — `NotificationListenerService` lee las notificaciones de mensajería y contrasta los dominios contra la **misma lista local** del escudo: el contenido de las notificaciones no sale del teléfono. El análisis profundo corre solo si el usuario abre la app y lo pide.
 - **iOS** — `ILMessageFilterExtension` (`apps/mobile/targets/message-filter`), limitado por Apple a SMS de remitentes desconocidos y a clasificar en carpetas: no puede alertar en tiempo real. No prometer eso en marketing.
+
+## Escáner del Dispositivo
+
+Revisa cómo está configurado el propio teléfono y explica cada hallazgo en criollo: bloqueo de pantalla, biometría, antigüedad del parche de seguridad, root/jailbreak y —en Android— apps con permiso de accesibilidad, que es la puerta que usan los troyanos bancarios de la región.
+
+El escaneo es **100 % local**: las señales se leen con APIs públicas sin permisos y se evalúan en `packages/shared/src/device.ts`. No hay ninguna llamada de red en ese camino.
+
+Una regla que se hace explícita en el código: **lo que no se puede verificar no se afirma**. Android oculta a las apps de terceros el estado de la depuración USB y las opciones de desarrollador (siempre leen 0), así que el escáner no muestra ningún tilde verde sobre esas señales en vez de dar una tranquilidad falsa.
+
+## Modo Familia
+
+Permite ver si los tuyos están protegidos **sin espiarlos**. Cada integrante se une tipeando un código en su propio teléfono y comparte solo tres cosas: si tiene el escudo activo, el score de su dispositivo y cuántas amenazas se le frenaron. Nunca dominios visitados, nunca mensajes, nunca ubicación. Todos ven de todos exactamente lo mismo, y cualquiera puede salir cuando quiera.
+
+- `POST /v1/family` · `POST /v1/family/join` — crear o unirse; devuelven el token del integrante **una sola vez** (el servidor guarda solo su SHA-256).
+- `GET /v1/family/me` — estado de todos los integrantes.
+- `PUT /v1/family/me/status` — reportar el propio estado.
+- `POST /v1/family/leave` — salir; al irse el último, la familia y su código se borran.
+
+Persistencia con TypeORM: better-sqlite3 en desarrollo (sin servicios que levantar) y PostgreSQL en producción vía `DATABASE_URL`, con la misma definición de entidades.
+
+Por qué esto **no** es una app de monitoreo —y por qué esa distinción decide el diseño, no solo el marketing— está explicado en [`docs/decisiones-tecnicas.md`](docs/decisiones-tecnicas.md).
 
 ```bash
 npm run backend:test   # unit tests

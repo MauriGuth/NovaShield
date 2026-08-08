@@ -3,15 +3,17 @@ import type {
   AnalysisReason,
   AnalyzeMessageResponse,
   AnalyzeResponse,
+  DeviceScanResult,
   VerdictLevel,
 } from '@novashield/shared';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 /**
- * Estado local del escudo: historial de escaneos y centro de alertas.
- * En el MVP las alertas viven solo en el dispositivo (privacidad por diseño);
- * la sincronización con el backend llega con cuentas y Modo Familia (Fase 3).
+ * Estado local del escudo: historial de escaneos, alertas y postura del
+ * dispositivo. Todo vive en el teléfono (privacidad por diseño). Lo único que
+ * puede salir es el resumen del Modo Familia, y solo si el usuario se unió a
+ * una: contadores y el score, nunca los enlaces ni el contenido de mensajes.
  */
 
 export interface StoredAlert {
@@ -51,6 +53,18 @@ interface ShieldState {
   messageAlerts: StoredAlert[];
   recordMessageScan: (result: AnalyzeMessageResponse, preview: string) => void;
   dismissMessageAlert: (id: string) => void;
+
+  // — Escáner del Dispositivo —
+  /** Último resultado del escaneo local. Las señales crudas no se persisten. */
+  deviceScan: DeviceScanResult | null;
+  recordDeviceScan: (result: DeviceScanResult) => void;
+
+  // — Modo Familia —
+  /** Credenciales del integrante en este dispositivo (null si no está en ninguna). */
+  family: { familyId: string; memberId: string; memberToken: string } | null;
+  setFamilySession: (
+    session: { familyId: string; memberId: string; memberToken: string } | null,
+  ) => void;
 }
 
 export interface BlockedDomain {
@@ -146,6 +160,12 @@ export const useShield = create<ShieldState>()(
         set((state) => ({
           messageAlerts: state.messageAlerts.filter((a) => a.id !== id),
         })),
+
+      deviceScan: null,
+      recordDeviceScan: (result) => set({ deviceScan: result }),
+
+      family: null,
+      setFamilySession: (session) => set({ family: session }),
     }),
     {
       name: 'novashield-store',
@@ -169,9 +189,10 @@ export function computeScore(state: {
   alerts: StoredAlert[];
   shieldEnabled?: boolean;
   messageProtectionEnabled?: boolean;
+  deviceScan?: DeviceScanResult | null;
 }): ScoreBreakdown {
   const pendingActions: string[] = [];
-  let score = 40; // base: tener la app instalada ya es algo
+  let score = 30; // base: tener la app instalada ya es algo
 
   if (state.shieldEnabled) {
     score += 30;
@@ -189,12 +210,26 @@ export function computeScore(state: {
     );
   }
 
+  // La configuración del propio teléfono aporta hasta 15 puntos, proporcional
+  // al resultado del escaneo: de nada sirve el mejor escudo sobre un equipo sin
+  // bloqueo de pantalla.
+  if (state.deviceScan) {
+    score += Math.round((state.deviceScan.score / 100) * 15);
+    const urgent = state.deviceScan.checks.filter((c) => c.status === 'critical');
+    for (const check of urgent) {
+      pendingActions.push(check.advice ?? check.title);
+    }
+  } else {
+    pendingActions.push(
+      'Revisá la seguridad de tu teléfono: el escaneo es local y tarda unos segundos.',
+    );
+  }
+
   if (state.scansCount === 0) {
     pendingActions.push('Probá el escáner con un enlace que te haya llegado.');
   } else {
     score += 10;
   }
-  if (state.scansCount >= 5) score += 5;
 
   const dangerous = state.alerts.filter((a) => a.verdict === 'malicious').length;
   if (dangerous > 0) {

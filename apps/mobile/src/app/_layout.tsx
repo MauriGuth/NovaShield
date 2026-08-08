@@ -1,10 +1,9 @@
-import { DarkTheme, DefaultTheme, router, ThemeProvider } from 'expo-router';
+import { DarkTheme, DefaultTheme, router, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
 import { useSharedText } from '@/lib/use-shared-text';
 
 SplashScreen.preventAutoHideAsync();
@@ -26,7 +25,17 @@ export default function TabLayout() {
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AnimatedSplashOverlay />
-      <AppTabs />
+      {/*
+        Las pestañas son una pantalla del Stack; Dispositivo y Familia se
+        apilan encima con su botón de volver. Es la forma de tenerlas
+        navegables sin sumar dos íconos más a la barra: seis pestañas se
+        vuelven ilegibles, y este producto apunta también a gente mayor.
+      */}
+      <Stack>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="dispositivo" options={{ title: 'Tu dispositivo' }} />
+        <Stack.Screen name="familia" options={{ title: 'Modo Familia' }} />
+      </Stack>
     </ThemeProvider>
   );
 }

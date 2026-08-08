@@ -1,4 +1,5 @@
 import type {
+  DeviceSecuritySignals,
   DomainBlockedEvent,
   ShieldStatus,
 } from '@novashield/shared';
@@ -54,6 +55,15 @@ export interface NovaShieldNative {
    */
   getLoadedDomainCount(): number;
   getBlockedCount(): number;
+
+  // — Escáner del Dispositivo —
+  /**
+   * Señales de postura de seguridad, todas leídas localmente y sin permisos.
+   * La evaluación (pesos, textos) vive en packages/shared/src/device.ts.
+   */
+  getDeviceSecuritySignals(): DeviceSecuritySignals;
+  /** Abre la sección de Ajustes que corresponde al chequeo (en iOS, los ajustes de la app). */
+  openDeviceSettings(section: string): Promise<void>;
 
   // — Protección de Mensajes —
   /** Android: acceso a notificaciones. iOS: filtro de SMS activado en Ajustes. */

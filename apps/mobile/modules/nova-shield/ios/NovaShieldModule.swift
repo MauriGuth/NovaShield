@@ -139,6 +139,24 @@ public class NovaShieldModule: Module {
       return defaults.integer(forKey: "blockedCount")
     }
 
+    // — Escáner del Dispositivo —
+
+    Function("getDeviceSecuritySignals") { () -> [String: Any?] in
+      DevicePosture.collect()
+    }
+
+    AsyncFunction("openDeviceSettings") { (_ section: String, promise: Promise) in
+      // iOS no permite deep-links a secciones puntuales de Ajustes desde apps
+      // de App Store: se abre la pantalla de ajustes de la propia app.
+      DispatchQueue.main.async {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else {
+          promise.resolve(nil)
+          return
+        }
+        UIApplication.shared.open(url) { _ in promise.resolve(nil) }
+      }
+    }
+
     // — Protección de Mensajes —
 
     Function("isMessageProtectionEnabled") { () -> Bool in
