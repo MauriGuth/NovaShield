@@ -8,6 +8,7 @@ export * from './shield';
 export * from './messages';
 export * from './device';
 export * from './family';
+export * from './plans';
 
 /** Nivel de veredicto sobre un enlace analizado. */
 export type VerdictLevel = 'malicious' | 'suspicious' | 'safe' | 'unknown';

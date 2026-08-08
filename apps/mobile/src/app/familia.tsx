@@ -1,4 +1,5 @@
 import type { FamilyMember } from '@novashield/shared';
+import { Link } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -17,6 +18,7 @@ import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useFamilyController } from '@/lib/use-family';
+import { usePlan } from '@/lib/use-plan';
 
 /**
  * Modo Familia: ver de un vistazo si los tuyos están protegidos.
@@ -29,6 +31,7 @@ import { useFamilyController } from '@/lib/use-family';
 export default function FamiliaScreen() {
   const { session, overview, busy, error, create, join, leave, share } =
     useFamilyController();
+  const { can } = usePlan();
   const [confirmingLeave, setConfirmingLeave] = useState(false);
 
   // Publica el estado propio al abrir y cada vez que la app vuelve al frente:
@@ -44,7 +47,17 @@ export default function FamiliaScreen() {
     return () => sub.remove();
   }, [session, share]);
 
-  if (!session) return <SinFamilia busy={busy} error={error} onCreate={create} onJoin={join} />;
+  if (!session) {
+    return (
+      <SinFamilia
+        busy={busy}
+        error={error}
+        canUseFamily={can('family')}
+        onCreate={create}
+        onJoin={join}
+      />
+    );
+  }
 
   return (
     <ThemedView style={styles.root}>
@@ -197,11 +210,13 @@ function MemberCard({ member }: { member: FamilyMember }) {
 function SinFamilia({
   busy,
   error,
+  canUseFamily,
   onCreate,
   onJoin,
 }: {
   busy: boolean;
   error: string | null;
+  canUseFamily: boolean;
   onCreate: (name: string, displayName: string) => Promise<boolean>;
   onJoin: (code: string, displayName: string) => Promise<boolean>;
 }) {
@@ -267,25 +282,50 @@ function SinFamilia({
 
           {error && <ThemedText type="small" style={styles.error}>{error}</ThemedText>}
 
+          {/*
+            Crear un grupo exige el plan Familia; UNIRSE es siempre gratis.
+            Al revés no tendría sentido: quien paga es el que arma el grupo, y
+            la abuela a la que invita no va a suscribirse para aceptar. Si le
+            pidiéramos plan para entrar, el plan Familia no serviría para nada.
+          */}
           {mode === 'none' && (
             <>
-              <Pressable
-                onPress={() => setMode('create')}
-                style={({ pressed }) => [
-                  styles.primaryButton,
-                  { backgroundColor: theme.accent, opacity: pressed ? 0.85 : 1 },
-                ]}>
-                <ThemedText type="smallBold" style={styles.primaryButtonText}>
-                  Crear una familia
-                </ThemedText>
-              </Pressable>
+              {canUseFamily ? (
+                <Pressable
+                  onPress={() => setMode('create')}
+                  style={({ pressed }) => [
+                    styles.primaryButton,
+                    { backgroundColor: theme.accent, opacity: pressed ? 0.85 : 1 },
+                  ]}>
+                  <ThemedText type="smallBold" style={styles.primaryButtonText}>
+                    Crear una familia
+                  </ThemedText>
+                </Pressable>
+              ) : (
+                <Link href="/planes" asChild>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.primaryButton,
+                      { backgroundColor: theme.accent, opacity: pressed ? 0.85 : 1 },
+                    ]}>
+                    <ThemedText type="smallBold" style={styles.primaryButtonText}>
+                      Crear una familia (plan Familia)
+                    </ThemedText>
+                  </Pressable>
+                </Link>
+              )}
+
               <Pressable
                 onPress={() => setMode('join')}
                 style={({ pressed }) => [styles.linkButton, pressed && styles.pressed]}>
                 <ThemedText type="smallBold" themeColor="accent">
-                  Ya tengo un código de invitación →
+                  Me invitaron: tengo un código →
                 </ThemedText>
               </Pressable>
+              <ThemedText type="small" themeColor="textSecondary">
+                Unirte a la familia de otra persona es gratis. Solo quien arma
+                el grupo necesita el plan Familia.
+              </ThemedText>
             </>
           )}
 

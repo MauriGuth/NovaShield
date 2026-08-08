@@ -10,7 +10,7 @@ Restricciones verificadas el 08-08-2026 contra documentación oficial (Apple TN3
 | Targets iOS | Swift vía `expo-apple-targets` (share ya cubierto por `expo-share-intent`) | Validar pipeline de firma multi-target en EAS temprano |
 | Nativo Android | Expo Modules (Kotlin): VpnService (Fase 2) + NotificationListener (Fase 2) | El componente nativo más caro del proyecto |
 | Backend | NestJS 11 + (PostgreSQL cuando lleguen cuentas) en Railway | Hoy el análisis es stateless |
-| Suscripciones | RevenueCat o StoreKit2/Play Billing (Fase 4) | |
+| Suscripciones | RevenueCat sobre StoreKit 2 / Play Billing (`react-native-purchases` 10.x) | Apple y Google obligan a su sistema de pagos: Stripe no es opción dentro de la app |
 
 ## El escudo DNS (Fase 2) — implementado
 
@@ -137,7 +137,7 @@ Regla del código: PhishTank indexa la URL completa (host+path+query). Nunca ind
 | 1 | **MVP**: Escáner de Enlaces + Score + Centro de Alertas (iOS/Android) | Hecho |
 | 2 | **Escudo DNS** (packet tunnel + VpnService) + **Protección de Mensajes** | Hecho — falta validar en dispositivo real |
 | 3 | **Escáner del Dispositivo + Modo Familia** | Este repo — falta validar en dispositivo real |
-| 4 | Monetización (freemium), publicación, marketing | Pendiente |
+| 4 | **Monetización (freemium), publicación** | Este repo — falta desplegar y los trámites de cuentas |
 
 ## Seguridad del backend (endpoint público)
 
@@ -162,3 +162,17 @@ Regla del código: PhishTank indexa la URL completa (host+path+query). Nunca ind
 8. **Clasificación del Modo Familia en Play**: la política no se pronuncia sobre nuestro caso exacto (compartir el estado propio entre adultos con consentimiento). El diseño está construido para quedar fuera de la definición de monitoring app, pero la decisión final es del revisor → tener listo el video demo mostrando el flujo de unión voluntaria y la simetría.
 9. **El esquema de la base se crea con `synchronize`**, apagado por defecto en PostgreSQL (`FAMILY_DB_SYNC=1` para el primer deploy). Antes de tener datos de usuarios reales hay que pasar a migraciones de TypeORM.
 10. Falta el registro auditable del consentimiento (art. 5/6 de la Ley 25.326) y la política de privacidad publicada: son bloqueantes de publicación, no de desarrollo.
+
+## Monetización (Fase 4) — qué se cobra y qué no
+
+El criterio está codificado en `packages/shared/src/plans.ts` y no es negociable por marketing:
+
+**Nunca se cobra lo que evita un daño inmediato.** Si la app ya detectó una estafa, cobrar por el aviso es indefendible en un producto cuya propuesta de valor es la honestidad. Quedan gratis para siempre: analizar un enlace o un mensaje a pedido, el Centro de Alertas, el Score y el Escáner del Dispositivo (que además es local y no nos cuesta nada).
+
+**Se cobra la protección continua**, que es la que corre sola todo el día y consume infraestructura: Escudo DNS permanente, revisión automática de mensajes entrantes y análisis sin tope. El plan Familia agrega compartir el estado con hasta 10 personas.
+
+**El tope del plan gratuito no es un muro.** Pasadas las 10 consultas diarias, la app manda `deepAnalysis: false` y el backend apaga solo las capas que cuestan por consulta (Web Risk e IA). Las listas de amenazas y las heurísticas siguen corriendo: verificado en vivo que un dominio de phishing real sigue devolviendo `malicious` con score 85 en ese modo. Nadie se queda sin veredicto por no pagar.
+
+`deepAnalysis` es una señal de **costo**, no de seguridad: el cliente puede mandar `true` siempre y lo peor que logra es que gastemos nosotros. El límite de abuso lo pone el `ThrottlerGuard`.
+
+**Unirse a una familia es gratis; solo quien la crea necesita el plan Familia.** Al revés el feature no existiría: la abuela invitada no se va a suscribir para aceptar una invitación.

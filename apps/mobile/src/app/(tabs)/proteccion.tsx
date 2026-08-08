@@ -9,6 +9,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { Link } from 'expo-router';
+
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
@@ -16,6 +18,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { NovaShield, isShieldAvailable } from '@/lib/native-shield';
 import { useShield as useShieldStore } from '@/lib/store';
 import { describeStatus, useShieldController } from '@/lib/use-shield';
+import { usePlan } from '@/lib/use-plan';
 
 /**
  * Las dos protecciones que corren solas: el Escudo DNS y la Protección de
@@ -26,6 +29,9 @@ export default function ProteccionScreen() {
   const theme = useTheme();
   const { status, busy, lastSync, enable, disable, sync } = useShieldController();
   const info = describeStatus(status);
+  const { can } = usePlan();
+  const canUseShield = can('shield');
+  const canUseMessageGuard = can('messageGuard');
 
   const domainCount = useShieldStore((s) => s.blocklistDomainCount);
   const checkedAt = useShieldStore((s) => s.blocklistCheckedAt);
@@ -81,11 +87,22 @@ export default function ProteccionScreen() {
               </View>
               <Switch
                 value={isActive}
-                disabled={!isShieldAvailable || busy}
+                disabled={!isShieldAvailable || busy || !canUseShield}
                 onValueChange={(next) => void (next ? enable() : disable())}
                 trackColor={{ true: theme.accent }}
               />
             </View>
+
+            {!canUseShield && (
+              <Link href="/planes" asChild>
+                <Pressable
+                  style={({ pressed }) => [styles.linkButton, pressed && styles.pressed]}>
+                  <ThemedText type="smallBold" themeColor="accent">
+                    El escudo continuo viene con Premium — ver planes →
+                  </ThemedText>
+                </Pressable>
+              </Link>
+            )}
 
             <ThemedText type="smallBold" style={{ color: statusColor }}>
               {info.label}
@@ -174,22 +191,37 @@ export default function ProteccionScreen() {
                 ? 'Revisamos los mensajes que te llegan y te avisamos si detectamos una estafa.'
                 : 'Necesitamos tu permiso para revisar los mensajes entrantes. El análisis se hace en el teléfono.'}
             </ThemedText>
-            <Pressable
-              onPress={async () => {
-                await NovaShield?.openMessageProtectionSettings();
-                setMessagesEnabled(
-                  NovaShield?.isMessageProtectionEnabled() ?? false,
-                );
-              }}
-              disabled={!isShieldAvailable}
-              style={({ pressed }) => [
-                styles.linkButton,
-                pressed && styles.pressed,
-              ]}>
-              <ThemedText type="smallBold" themeColor="accent">
-                {messagesEnabled ? 'Ver ajustes' : 'Activar'} →
-              </ThemedText>
-            </Pressable>
+            {canUseMessageGuard ? (
+              <Pressable
+                onPress={async () => {
+                  await NovaShield?.openMessageProtectionSettings();
+                  setMessagesEnabled(
+                    NovaShield?.isMessageProtectionEnabled() ?? false,
+                  );
+                }}
+                disabled={!isShieldAvailable}
+                style={({ pressed }) => [
+                  styles.linkButton,
+                  pressed && styles.pressed,
+                ]}>
+                <ThemedText type="smallBold" themeColor="accent">
+                  {messagesEnabled ? 'Ver ajustes' : 'Activar'} →
+                </ThemedText>
+              </Pressable>
+            ) : (
+              <Link href="/planes" asChild>
+                <Pressable
+                  style={({ pressed }) => [styles.linkButton, pressed && styles.pressed]}>
+                  <ThemedText type="smallBold" themeColor="accent">
+                    La revisión automática viene con Premium — ver planes →
+                  </ThemedText>
+                </Pressable>
+              </Link>
+            )}
+            <ThemedText type="small" themeColor="textSecondary">
+              Podés pegar cualquier mensaje en el escáner y revisarlo gratis,
+              siempre.
+            </ThemedText>
           </ThemedView>
 
           {recentBlocks.length > 0 && (

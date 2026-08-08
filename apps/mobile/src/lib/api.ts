@@ -35,13 +35,20 @@ export class ApiError extends Error {
 export async function analyzeUrl(
   text: string,
   signal?: AbortSignal,
+  options: { deepAnalysis?: boolean } = {},
 ): Promise<AnalyzeResponse> {
   let res: Response;
   try {
     res = await fetch(`${API_URL}/v1/analyze`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ url: text }),
+      // `deepAnalysis: false` apaga las capas pagas (Web Risk + IA) para el
+      // plan gratuito pasado su tope diario. Las capas locales siguen corriendo
+      // siempre: nadie se queda sin veredicto.
+      body: JSON.stringify({
+        url: text,
+        ...(options.deepAnalysis === false ? { deepAnalysis: false } : {}),
+      }),
       signal,
     });
   } catch (err) {

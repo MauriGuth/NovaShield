@@ -35,6 +35,7 @@ export default function TabLayout() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="dispositivo" options={{ title: 'Tu dispositivo' }} />
         <Stack.Screen name="familia" options={{ title: 'Modo Familia' }} />
+        <Stack.Screen name="planes" options={{ title: 'Planes' }} />
       </Stack>
     </ThemeProvider>
   );

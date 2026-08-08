@@ -240,6 +240,15 @@ export default function HomeScreen() {
             </ThemedText>
             <ThemedText type="small">{tip}</ThemedText>
           </ThemedView>
+
+          <Link href="/planes" asChild>
+            <Pressable
+              style={({ pressed }) => [styles.linkButton, pressed && styles.pressed]}>
+              <ThemedText type="small" themeColor="accent">
+                Ver planes y suscripción →
+              </ThemedText>
+            </Pressable>
+          </Link>
         </ScrollView>
       </SafeAreaView>
     </ThemedView>
@@ -314,5 +323,11 @@ const styles = StyleSheet.create({
   },
   alertDomain: {
     flexShrink: 1,
+  },
+  linkButton: {
+    paddingVertical: Spacing.one,
+  },
+  pressed: {
+    opacity: 0.6,
   },
 });

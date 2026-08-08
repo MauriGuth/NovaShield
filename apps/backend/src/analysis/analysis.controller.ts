@@ -10,6 +10,6 @@ export class AnalysisController {
   @Post()
   @HttpCode(200)
   analyze(@Body() body: AnalyzeDto): Promise<AnalyzeResponse> {
-    return this.analysis.analyze(body.url);
+    return this.analysis.analyze(body.url, { deepAnalysis: body.deepAnalysis });
   }
 }

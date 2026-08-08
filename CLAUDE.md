@@ -34,3 +34,6 @@ Monorepo npm workspaces: `apps/mobile` (Expo SDK 57 + expo-router, más `modules
 - El escáner del dispositivo **no afirma lo que no puede verificar**: `Settings.Global.ADB_ENABLED` y `DEVELOPMENT_SETTINGS_ENABLED` siempre devuelven 0 para apps de terceros, así que esas señales no se reportan. Una señal `undefined` nunca puede producir un chequeo en verde.
 - El escáner es on-device y sin red: no agregar ningún fetch en `device-scan.ts` ni en `DevicePosture.{kt,swift}`.
 - Los scripts de la raíz recompilan `packages/shared` con hooks `pre*`: si agregás un script nuevo que consuma el paquete, agregá su `pre<script>` correspondiente.
+- **Monetización**: lo que evita un daño inmediato NO se cobra (análisis a pedido, alertas, score, escáner del dispositivo). Se cobra la protección continua. El tope del plan gratuito degrada a las capas locales (`deepAnalysis: false`) pero SIEMPRE devuelve un veredicto — nunca deja a alguien sin respuesta frente a un enlace. Unirse a una familia es gratis; solo crearla exige plan.
+- Los pagos van por StoreKit/Play Billing vía RevenueCat. Meter un link de pago externo o Stripe dentro de la app viola la guideline 3.1.1 de Apple y la política de pagos de Play.
+- Los identificadores de entitlement (`premium`, `familia`) viven en `packages/shared/src/plans.ts` y tienen que coincidir con el panel de RevenueCat.

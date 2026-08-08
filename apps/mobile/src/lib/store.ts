@@ -4,6 +4,7 @@ import type {
   AnalyzeMessageResponse,
   AnalyzeResponse,
   DeviceScanResult,
+  PlanTier,
   VerdictLevel,
 } from '@novashield/shared';
 import { create } from 'zustand';
@@ -65,6 +66,18 @@ interface ShieldState {
   setFamilySession: (
     session: { familyId: string; memberId: string; memberToken: string } | null,
   ) => void;
+
+  // — Plan —
+  /**
+   * Último plan conocido. Es solo un caché para no parpadear al abrir: la
+   * verdad la tiene RevenueCat y se re-consulta en cada apertura.
+   */
+  planTier: PlanTier;
+  setPlanTier: (tier: PlanTier) => void;
+  /** Contador diario de análisis profundos del plan gratuito. */
+  analysesToday: number;
+  analysesDate: string;
+  countAnalysis: (todayKey: string) => void;
 }
 
 export interface BlockedDomain {
@@ -166,6 +179,18 @@ export const useShield = create<ShieldState>()(
 
       family: null,
       setFamilySession: (session) => set({ family: session }),
+
+      planTier: 'free',
+      setPlanTier: (tier) => set({ planTier: tier }),
+
+      analysesToday: 0,
+      analysesDate: '',
+      countAnalysis: (todayKey) =>
+        set((state) => ({
+          analysesDate: todayKey,
+          // Día nuevo, contador nuevo.
+          analysesToday: state.analysesDate === todayKey ? state.analysesToday + 1 : 1,
+        })),
     }),
     {
       name: 'novashield-store',

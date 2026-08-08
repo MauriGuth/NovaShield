@@ -35,7 +35,18 @@ export class AnalysisService {
     private readonly llm: LlmService,
   ) {}
 
-  async analyze(rawInput: string): Promise<AnalyzeResponse> {
+  /**
+   * `deepAnalysis: false` apaga las capas que cuestan plata por consulta (Web
+   * Risk y el LLM). Lo manda la app cuando un usuario del plan gratuito superó
+   * su tope diario. Las capas 1 y 3a —listas de amenazas y heurísticas— corren
+   * SIEMPRE: son locales, no cuestan nada y atajan la mayoría del phishing
+   * real. Nadie se queda sin veredicto por no pagar.
+   */
+  async analyze(
+    rawInput: string,
+    options: { deepAnalysis?: boolean } = {},
+  ): Promise<AnalyzeResponse> {
+    const deepAnalysis = options.deepAnalysis !== false;
     const startedAt = Date.now();
 
     const submitted = extractUrl(rawInput);
@@ -78,7 +89,7 @@ export class AnalysisService {
 
     // Capa 2 · Web Risk (solo si no hay ya un veredicto malicioso de capa 1)
     let webRiskRan = false;
-    if (this.webRisk.isEnabled && score < RISK_THRESHOLDS.malicious) {
+    if (deepAnalysis && this.webRisk.isEnabled && score < RISK_THRESHOLDS.malicious) {
       const threats = await this.webRisk.check(finalUrl);
       if (threats !== null) {
         webRiskRan = true;
@@ -98,6 +109,7 @@ export class AnalysisService {
     // Capa 3b · LLM, solo en la franja ambigua (ni claramente malo ni limpio)
     let llmRan = false;
     if (
+      deepAnalysis &&
       this.llm.isEnabled &&
       score < RISK_THRESHOLDS.malicious &&
       score >= LLM_MIN_SCORE

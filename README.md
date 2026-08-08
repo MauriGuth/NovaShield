@@ -2,7 +2,7 @@
 
 App móvil de ciberseguridad personal contra estafas, fraudes y hackeos (iOS & Android), de Nova Solutions. Analiza enlaces antes de que los abras, vigila la red y detecta mensajes sospechosos — avisando en el momento, antes de que el daño ocurra.
 
-Estado: **Fase 3** — Escáner del Dispositivo + Modo Familia, sobre el Escudo DNS y la Protección de Mensajes de Fase 2 y el MVP de Fase 1 (Escáner de Enlaces + Score + Centro de Alertas). Ver [hoja de ruta](docs/decisiones-tecnicas.md#hoja-de-ruta).
+Estado: **Fase 4** — modelo freemium y preparación para publicar, sobre todo lo anterior. Para instalar la app en un teléfono y para los pasos en App Store Connect y Play Console, ver [`docs/publicacion.md`](docs/publicacion.md).
 
 ## Estructura
 

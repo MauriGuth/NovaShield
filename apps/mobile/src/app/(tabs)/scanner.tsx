@@ -18,6 +18,7 @@ import { VerdictCard } from '@/components/verdict-card';
 import { BottomTabInset, Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { analyzeUrl, ApiError } from '@/lib/api';
+import { localDateKey, useRemainingAnalyses, usePlan } from '@/lib/use-plan';
 import { useShield } from '@/lib/store';
 
 const REQUEST_TIMEOUT_MS = 25_000;
@@ -25,6 +26,11 @@ const REQUEST_TIMEOUT_MS = 25_000;
 export default function ScannerScreen() {
   const theme = useTheme();
   const recordScan = useShield((s) => s.recordScan);
+  const countAnalysis = useShield((s) => s.countAnalysis);
+  const { tier } = usePlan();
+  const remaining = useRemainingAnalyses(tier);
+  // null = plan pago, sin tope.
+  const deepAllowed = remaining === null || remaining > 0;
   // Texto que llega desde el menú Compartir (lo pasa _layout por parámetro).
   const { shared } = useLocalSearchParams<{ shared?: string }>();
 
@@ -64,9 +70,18 @@ export default function ScannerScreen() {
       setError(null);
       setResult(null);
       try {
-        const response = await analyzeUrl(trimmed, pending.ctrl.signal);
+        // El tope del plan gratuito NO bloquea el análisis: se le pide al
+        // backend que use solo las capas locales (listas + heurísticas), que
+        // son gratis para nosotros y atajan la mayoría del phishing real. Lo
+        // que se apaga es Web Risk y la IA, que cuestan por consulta. El
+        // usuario siempre recibe un veredicto — dejarlo sin respuesta frente a
+        // un link concreto sería inaceptable en una app de seguridad.
+        const response = await analyzeUrl(trimmed, pending.ctrl.signal, {
+          deepAnalysis: deepAllowed,
+        });
         setResult(response);
         recordScan(response);
+        if (deepAllowed) countAnalysis(localDateKey());
       } catch (err) {
         if (pending.superseded) return; // otro análisis lo reemplazó
         if (pending.timedOut) {
@@ -86,7 +101,7 @@ export default function ScannerScreen() {
         }
       }
     },
-    [recordScan],
+    [recordScan, countAnalysis, deepAllowed],
   );
 
   // Links compartidos: analizamos cada valor nuevo una sola vez.
