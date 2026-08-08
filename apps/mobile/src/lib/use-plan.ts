@@ -6,7 +6,7 @@ import {
 } from '@novashield/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { AppState } from 'react-native';
-import { currentPlan, isBillingAvailable, restore } from './purchases';
+import { currentPlan, restore } from './purchases';
 import { useShield as useShieldStore } from './store';
 
 /**
@@ -21,10 +21,9 @@ export function usePlan() {
   const storedTier = useShieldStore((s) => s.planTier);
   const setPlanTier = useShieldStore((s) => s.setPlanTier);
   const [tier, setTier] = useState<PlanTier>(storedTier);
-  const [loading, setLoading] = useState(isBillingAvailable);
+  const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    if (!isBillingAvailable) return;
     const fresh = await currentPlan();
     setTier(fresh);
     setPlanTier(fresh);
@@ -36,8 +35,10 @@ export function usePlan() {
   // ahí no llega ningún evento. La consulta va inline y cancelable en vez de
   // llamar a `refresh()`, para no escribir estado sincrónicamente desde el
   // efecto (renders en cascada).
+  //
+  // Corre SIEMPRE, aunque no haya cobros configurados: `currentPlan()` es el
+  // que sabe si el build está desbloqueado para pruebas.
   useEffect(() => {
-    if (!isBillingAvailable) return;
     let cancelled = false;
 
     const load = async () => {

@@ -22,7 +22,8 @@
       },
       "channel": "preview",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://novashield-api-staging.up.railway.app"
+        "EXPO_PUBLIC_API_URL": "https://CAMBIAR-POR-TU-URL.up.railway.app",
+        "EXPO_PUBLIC_UNLOCK_ALL": "1"
       }
     },
     "production": {

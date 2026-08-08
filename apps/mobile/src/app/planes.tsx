@@ -8,7 +8,12 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { availablePackages, isBillingAvailable, purchase } from '@/lib/purchases';
+import {
+  availablePackages,
+  isBillingAvailable,
+  isUnlockedForTesting,
+  purchase,
+} from '@/lib/purchases';
 import { usePlan } from '@/lib/use-plan';
 
 /**
@@ -92,12 +97,19 @@ export default function PlanesScreen() {
             <Item text="Ver si los tuyos están protegidos, sin espiarlos: solo su estado, nunca lo que hacen." />
           </ThemedView>
 
-          {!isBillingAvailable ? (
+          {isUnlockedForTesting ? (
+            <ThemedView type="backgroundElement" style={styles.card}>
+              <ThemedText type="smallBold">Build de prueba</ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                Esta versión tiene todas las funciones abiertas, sin
+                suscripción. No es lo que van a ver los usuarios.
+              </ThemedText>
+            </ThemedView>
+          ) : !isBillingAvailable ? (
             <ThemedView type="backgroundElement" style={styles.card}>
               <ThemedText type="small" themeColor="textSecondary">
-                Las suscripciones no están disponibles en esta versión de
-                prueba. Todas las funciones están abiertas para que puedas
-                probarlas.
+                No pudimos cargar los planes en esta versión. Seguís teniendo
+                todo lo gratuito.
               </ThemedText>
             </ThemedView>
           ) : packages === null ? (

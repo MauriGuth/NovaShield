@@ -62,6 +62,27 @@ cd apps/mobile && npx expo start --dev-client
 
 Con el build de desarrollo, el JS lo sirve Metro desde tu máquina: cambiás el `.env`, recargás la app y listo — **no hay que recompilar**.
 
+### 1.4 bis · Usar la app con la Mac apagada
+
+Un build de **desarrollo** depende de la Mac por dos motivos distintos:
+
+1. **El JavaScript** lo sirve Metro desde tu máquina.
+2. **El backend** corre en tu IP local.
+
+Para independizarte hay que resolver los dos:
+
+**a) Build con el bundle adentro.** El perfil `preview` empaqueta el JS dentro de la app:
+
+```bash
+eas build --profile preview --platform ios
+```
+
+Ese build ya no necesita Metro: se abre y anda sola. Trae `EXPO_PUBLIC_UNLOCK_ALL=1`, así que tiene todas las funciones abiertas para probar.
+
+**b) Backend desplegado.** Ver la sección de Railway más abajo. Después actualizá `EXPO_PUBLIC_API_URL` en el perfil `preview` de `eas.json` con tu URL real y volvé a compilar.
+
+Mientras el backend siga solo en tu Mac, la app en la calle no va a poder analizar enlaces ni sincronizar la lista del escudo. Lo que **sí** funciona sin backend: el Escáner del Dispositivo (es 100 % local) y el bloqueo del Escudo DNS con la lista que ya tenga descargada.
+
 ### 1.5 Qué vas a poder probar y qué no
 
 | Función | ¿Anda en tu iPhone? |
@@ -220,6 +241,38 @@ Play separa "producto" de "base plan": el ID que RevenueCat necesita es el del *
 - Política de privacidad: obligatoria.
 
 ---
+
+## Parte 3 bis · Desplegar el backend en Railway
+
+El repo trae un `Dockerfile` en la raíz. Es a propósito: la detección automática de Railway se marea con el monorepo, porque hay que instalar desde la raíz y compilar `packages/shared` **antes** que el backend.
+
+1. En [railway.app](https://railway.app) → **New Project → Deploy from GitHub repo** → elegí `MauriGuth/NovaShield`.
+2. En **Settings → Source**, poné la rama `claude/mobile-app-ios-android-8ne6ky` (o `main` cuando mergees).
+3. Railway detecta el `Dockerfile` de la raíz solo. Si no, en **Settings → Build** elegí *Dockerfile* y dejá el path en `Dockerfile`.
+4. **New → Database → PostgreSQL** dentro del mismo proyecto. Railway crea `DATABASE_URL` y la inyecta.
+5. En **Variables** del servicio del backend, agregá:
+
+| Variable | Valor | Nota |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | tu clave | Capa de IA. Sin esto la app anda igual, con listas + heurísticas |
+| `FAMILY_DB_SYNC` | `1` | **Solo para el primer arranque.** Crea las tablas y después se saca |
+| `ALLOWED_ORIGINS` | tu dominio | Opcional hasta que exista panel web |
+| `WEB_RISK_API_KEY` | opcional | Capa 2 |
+
+6. **Settings → Networking → Generate Domain**. Te da algo como `novashield-api-production.up.railway.app`.
+7. Probá que ande:
+
+```bash
+curl https://TU-URL.up.railway.app/v1/health
+```
+
+Esperá al primer refresh de listas: `domains` tiene que llegar a ~170.000. Recién ahí `/v1/shield/blocklist` responde (antes devuelve 503 a propósito, para no instalar una lista vacía en los teléfonos).
+
+8. **Sacá `FAMILY_DB_SYNC`** una vez que las tablas existan. Dejarlo puesto permite que un cambio de entidades altere el esquema solo, y eso con datos reales adentro es peligroso.
+
+9. Actualizá `EXPO_PUBLIC_API_URL` en el perfil `preview` (y `production`) de `apps/mobile/eas.json` con esa URL, y recompilá.
+
+> El plan gratuito de Railway duerme los servicios por inactividad. La primera consulta después de dormir tarda unos segundos: si estás probando y el primer análisis demora, es eso.
 
 ## Parte 4 · RevenueCat
 

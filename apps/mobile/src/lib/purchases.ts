@@ -28,6 +28,21 @@ const apiKey = Platform.select({ ios: IOS_KEY, android: ANDROID_KEY }) ?? '';
 /** ¿Hay cobros configurados en este build? */
 export const isBillingAvailable = apiKey.length > 0;
 
+/**
+ * Desbloqueo total, sin pasar por la tienda.
+ *
+ * Se activa en builds de desarrollo (`__DEV__`) y en cualquier build que setee
+ * `EXPO_PUBLIC_UNLOCK_ALL=1` — que es como el equipo prueba la app completa en
+ * TestFlight sin tener que suscribirse a su propio producto.
+ *
+ * En un build de producción real la variable no está y `__DEV__` es false, así
+ * que esto no puede regalar Premium por accidente. La condición es explícita a
+ * propósito: NO alcanza con "no hay claves de RevenueCat" para desbloquear,
+ * porque un build de producción al que se le olvidaron las claves abriría todo.
+ */
+export const isUnlockedForTesting =
+  __DEV__ || process.env.EXPO_PUBLIC_UNLOCK_ALL === '1';
+
 let configured = false;
 
 export async function initPurchases(): Promise<void> {
@@ -51,6 +66,7 @@ export function planFromCustomerInfo(info: CustomerInfo | null): PlanTier {
 }
 
 export async function currentPlan(): Promise<PlanTier> {
+  if (isUnlockedForTesting) return 'family';
   if (!isBillingAvailable) return 'free';
   try {
     await initPurchases();
