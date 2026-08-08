@@ -2,8 +2,7 @@
 #
 # Va un Dockerfile y no la detección automática de Railway porque esto es un
 # monorepo con workspaces: hay que instalar desde la raíz y compilar
-# packages/shared ANTES que el backend, o el build falla por tipos que todavía
-# no existen.
+# packages/shared ANTES que el backend.
 #
 # Se construye desde la raíz del repo:  docker build -t novashield-api .
 
@@ -16,21 +15,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       python3 make g++ ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Primero solo los manifiestos: si no cambian, Docker reusa la capa de npm ci.
 COPY package.json package-lock.json ./
-COPY packages/shared/package.json packages/shared/
-COPY apps/backend/package.json apps/backend/
-COPY apps/mobile/package.json apps/mobile/
 
-# --ignore-scripts evita que el `prepare` de packages/shared corra antes de que
-# su código esté copiado. Se compila explícitamente más abajo.
-RUN npm ci --ignore-scripts
-
+# El código de packages/shared va ANTES del install, no después: su script
+# `prepare` corre `tsc` al terminar de instalar, y sin los fuentes ahí falla
+# con "command failed: tsc -p tsconfig.json". `--ignore-scripts` tampoco es
+# salida — saltea el prepare y deja el paquete sin compilar, que es peor.
 COPY packages/shared packages/shared
 COPY apps/backend apps/backend
 
-RUN npm run build --workspace @novashield/shared \
-    && npm run build --workspace apps/backend
+# apps/mobile solo aporta su manifiesto: el lockfile es del monorepo entero y
+# npm quiere ver el workspace declarado, pero sus dependencias (Expo, React
+# Native) no pintan nada en un servidor y son la mayor parte del árbol.
+COPY apps/mobile/package.json apps/mobile/package.json
+
+# Filtrar por workspace baja de ~1480 paquetes a ~780. El `prepare` de
+# packages/shared corre acá y deja dist/ listo para que compile el backend.
+RUN npm ci \
+      --workspace packages/shared \
+      --workspace apps/backend \
+      --include-workspace-root
+
+RUN npm run build --workspace apps/backend
 
 # — Imagen final —
 FROM node:22-slim AS runtime
