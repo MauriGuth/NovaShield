@@ -10,6 +10,7 @@
     "ios": {
       "bundleIdentifier": "ar.com.novasolutions.novashield",
       "icon": "./assets/expo.icon",
+      "appleTeamId": "ABS5DYM6TB",
       "infoPlist": {
         "NSFaceIDUsageDescription": "Nova Shield revisa si tenés Face ID configurado para calcular el puntaje de seguridad de tu teléfono. No usamos tu rostro ni guardamos ningún dato biométrico."
       },
