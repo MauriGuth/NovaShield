@@ -24,8 +24,16 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
   private static let blocklistFile = "blocklist.bin"
 
   /// Direcciones internas del túnel; no existen en ninguna red real (RFC 5737).
-  private static let tunnelAddress = "192.0.2.1"
-  private static let tunnelDns = "192.0.2.2"
+  ///
+  /// El resolver tiene que quedar DENTRO de la subred de la interfaz. Antes la
+  /// interfaz era 192.0.2.1/32 y el DNS 192.0.2.2: con una máscara /32 la
+  /// interfaz no tiene subred, así que el resolver quedaba fuera de todo
+  /// alcance directo y dependía solo de la ruta explícita — algo que iOS no
+  /// siempre instala. Con la interfaz en /24 el resolver es directamente
+  /// alcanzable y el patrón es el que usan los túneles DNS que funcionan.
+  private static let tunnelAddress = "192.0.2.2"
+  private static let tunnelMask = "255.255.255.0"
+  private static let tunnelDns = "192.0.2.1"
 
   /// Resolver upstream. Quad9 filtra dominios maliciosos por su cuenta, así que
   /// suma una segunda capa además de la lista local.
@@ -33,6 +41,21 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
   private let log = OSLog(subsystem: "ar.com.novasolutions.novashield", category: "DnsShield")
   private var blockedCount = 0
+
+  /**
+   Contadores de diagnóstico.
+
+   Se loguean SOLO números, nunca un dominio: el escudo promete que ninguna
+   consulta sale del teléfono, y un log del sistema con los dominios visitados
+   sería exactamente el registro de navegación que el producto asegura no tener.
+
+   Con estos tres números alcanza para saber dónde se corta la cadena:
+     packetsSeen == 0            → el DNS ni siquiera entra al túnel (config)
+     queriesParsed == 0          → entra pero no se parsea (parser)
+     blocked == 0 con parsed > 0 → se parsea pero no matchea (lista o hashing)
+   */
+  private var packetsSeen = 0
+  private var queriesParsed = 0
 
   /// Una única sesión UDP reutilizable hacia el resolver. Crear una sesión por
   /// consulta filtraba ~1 KB por resolución (el read handler retenía la sesión
@@ -62,11 +85,13 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
     let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: Self.tunnelAddress)
 
-    let ipv4 = NEIPv4Settings(addresses: [Self.tunnelAddress], subnetMasks: ["255.255.255.255"])
-    // Se rutea SOLO la IP del DNS interno: nada más entra al túnel.
+    let ipv4 = NEIPv4Settings(addresses: [Self.tunnelAddress], subnetMasks: [Self.tunnelMask])
+    // Se rutea SOLO la IP del DNS interno: nada más entra al túnel. El resto de
+    // la navegación sale por la ruta normal, sin pasar por acá.
     ipv4.includedRoutes = [
       NEIPv4Route(destinationAddress: Self.tunnelDns, subnetMask: "255.255.255.255")
     ]
+    ipv4.excludedRoutes = []
     settings.ipv4Settings = ipv4
 
     let dns = NEDNSSettings(servers: [Self.tunnelDns])
@@ -153,7 +178,17 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
   }
 
   private func handle(_ packet: Data) {
+    packetsSeen += 1
+    // Cada 20 paquetes: una foto del estado, sin ningún dato de navegación.
+    if packetsSeen % 20 == 1 {
+      os_log(
+        "Diagnóstico · paquetes:%d consultas:%d bloqueos:%d lista:%d",
+        log: log, type: .info,
+        packetsSeen, queriesParsed, blockedCount, ShieldBlocklist.shared.domainCount)
+    }
+
     guard let query = DnsPacketParser.parseQuery(packet) else { return }
+    queriesParsed += 1
 
     if ShieldBlocklist.shared.isBlocked(query.domain) {
       blockedCount += 1
