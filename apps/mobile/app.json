@@ -9,7 +9,13 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "ar.com.novasolutions.novashield",
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "entitlements": {
+        "com.apple.developer.networking.networkextension": ["packet-tunnel-provider"],
+        "com.apple.security.application-groups": [
+          "group.ar.com.novasolutions.novashield"
+        ]
+      }
     },
     "android": {
       "package": "ar.com.novasolutions.novashield",
@@ -35,6 +41,7 @@
           "imageWidth": 76
         }
       ],
+      "@bacons/apple-targets",
       [
         "expo-share-intent",
         {

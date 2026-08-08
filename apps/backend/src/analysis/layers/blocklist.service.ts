@@ -1,7 +1,8 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { normalizeForLookup, parentDomains } from '../url-utils';
+import { domainLookupKeys } from '@novashield/shared';
+import { normalizeForLookup } from '../url-utils';
 
 /**
  * Capa 1 · Bases de amenazas.
@@ -76,12 +77,22 @@ export class BlocklistService implements OnModuleInit {
     if (this.combinedUrls.has(full) || this.combinedUrls.has(withoutQuery)) {
       return { source: this.sourceOfUrl(full, withoutQuery), kind: 'url' };
     }
-    for (const domain of parentDomains(host)) {
+    for (const domain of domainLookupKeys(host)) {
       if (this.combinedDomains.has(domain)) {
         return { source: this.sourceOfDomain(domain), kind: 'domain' };
       }
     }
     return null;
+  }
+
+  /**
+   * Dominios bloqueados, para que el Escudo DNS los distribuya al dispositivo.
+   * Solo fuentes basadas en dominio: las URLs exactas de PhishTank incluyen
+   * sitios legítimos comprometidos o con open-redirects, y bloquear ese
+   * dominio entero por DNS rompería el sitio real.
+   */
+  get blockedDomains(): ReadonlySet<string> {
+    return this.combinedDomains;
   }
 
   get stats() {

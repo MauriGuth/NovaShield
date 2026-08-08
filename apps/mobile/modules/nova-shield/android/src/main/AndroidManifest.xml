@@ -1,0 +1,47 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <uses-permission android:name="android.permission.INTERNET" />
+  <!-- Para leer los DNS de la red activa y respetarlos como upstream. -->
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+  <application>
+
+    <!--
+      Escudo DNS. El intent-filter y el permiso BIND_VPN_SERVICE son exigidos
+      por Android para todo VpnService: el permiso hace que solo el sistema
+      pueda bindearlo, que es lo que vuelve seguro tener exported=true
+      (obligatorio desde targetSdk 31 cuando hay intent-filter).
+      foregroundServiceType=systemExempted es la categoría que la documentación
+      de Android lista para apps de VPN.
+    -->
+    <service
+      android:name="ar.com.novasolutions.novashield.DnsShieldVpnService"
+      android:permission="android.permission.BIND_VPN_SERVICE"
+      android:exported="true"
+      android:foregroundServiceType="systemExempted"
+      android:stopWithTask="false">
+      <intent-filter>
+        <action android:name="android.net.VpnService" />
+      </intent-filter>
+    </service>
+
+    <!--
+      Protección de Mensajes. El usuario lo habilita a mano desde Ajustes; el
+      permiso BIND_NOTIFICATION_LISTENER_SERVICE solo lo puede otorgar el
+      sistema. No se pide ningún permiso de SMS: Google Play los reserva para
+      la app de mensajes por defecto (ver docs/decisiones-tecnicas.md).
+    -->
+    <service
+      android:name="ar.com.novasolutions.novashield.MessageGuardService"
+      android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+      android:exported="true">
+      <intent-filter>
+        <action android:name="android.service.notification.NotificationListenerService" />
+      </intent-filter>
+    </service>
+
+  </application>
+</manifest>

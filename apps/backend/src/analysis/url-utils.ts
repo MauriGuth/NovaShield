@@ -52,6 +52,31 @@ export function extractUrl(text: string): URL | null {
   return null;
 }
 
+/**
+ * Extrae TODAS las URLs de un texto (mensajes que traen varios links), en
+ * orden de aparición y sin repetir. `max` acota el costo del análisis.
+ */
+export function extractUrls(text: string, max = 3): URL[] {
+  const found = new Map<string, URL>();
+
+  for (const match of text.matchAll(new RegExp(URL_IN_TEXT, 'gi'))) {
+    const url = safeParse(match[0]);
+    if (url && !found.has(url.href)) found.set(url.href, url);
+    if (found.size >= max) return [...found.values()];
+  }
+
+  // Sin esquema: solo si no apareció ninguna URL completa, para no duplicar.
+  if (found.size === 0) {
+    for (const match of text.matchAll(new RegExp(BARE_DOMAIN_IN_TEXT, 'gi'))) {
+      const url = safeParse(`https://${match[1]}`);
+      if (url && !found.has(url.href)) found.set(url.href, url);
+      if (found.size >= max) break;
+    }
+  }
+
+  return [...found.values()];
+}
+
 function safeParse(candidate: string): URL | null {
   try {
     const url = new URL(candidate.replace(/[.,;!?]+$/, ''));

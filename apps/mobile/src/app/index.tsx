@@ -6,6 +6,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { NovaShield } from '@/lib/native-shield';
 import { computeScore, useShield } from '@/lib/store';
 import { VERDICT_UI } from '@/lib/verdict-ui';
 
@@ -21,7 +22,16 @@ export default function HomeScreen() {
   const theme = useTheme();
   const scansCount = useShield((s) => s.scansCount);
   const alerts = useShield((s) => s.alerts);
-  const { score, pendingActions } = computeScore({ scansCount, alerts });
+  const shieldEnabled = useShield((s) => s.shieldEnabled);
+  const totalBlocked = useShield((s) => s.totalBlocked);
+  const messageProtectionEnabled =
+    NovaShield?.isMessageProtectionEnabled() ?? false;
+  const { score, pendingActions } = computeScore({
+    scansCount,
+    alerts,
+    shieldEnabled,
+    messageProtectionEnabled,
+  });
 
   const scoreColor =
     score >= 80 ? theme.accent : score >= 50 ? theme.warn : theme.danger;
@@ -57,6 +67,33 @@ export default function HomeScreen() {
               {alerts.length} {alerts.length === 1 ? 'alerta activa' : 'alertas activas'}
             </ThemedText>
           </View>
+
+          <Link href="/proteccion" asChild>
+            <Pressable>
+              <ThemedView type="backgroundElement" style={styles.shieldCard}>
+                <View style={styles.shieldRow}>
+                  <View
+                    style={[
+                      styles.shieldDot,
+                      {
+                        backgroundColor: shieldEnabled
+                          ? theme.accent
+                          : theme.textSecondary,
+                      },
+                    ]}
+                  />
+                  <ThemedText type="smallBold">
+                    {shieldEnabled ? 'Escudo DNS activo' : 'Escudo DNS apagado'}
+                  </ThemedText>
+                </View>
+                <ThemedText type="small" themeColor="textSecondary">
+                  {shieldEnabled
+                    ? `${totalBlocked} ${totalBlocked === 1 ? 'sitio bloqueado' : 'sitios bloqueados'} hasta ahora.`
+                    : 'Bloquea sitios de estafa en todas tus apps, sin que hagas nada.'}
+                </ThemedText>
+              </ThemedView>
+            </Pressable>
+          </Link>
 
           <Link href="/scanner" asChild>
             <Pressable
@@ -171,6 +208,21 @@ const styles = StyleSheet.create({
     borderRadius: Spacing.three,
     padding: Spacing.three,
     gap: Spacing.two,
+  },
+  shieldCard: {
+    borderRadius: Spacing.three,
+    padding: Spacing.three,
+    gap: Spacing.one,
+  },
+  shieldRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  shieldDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
   },
   alertRow: {
     flexDirection: 'row',

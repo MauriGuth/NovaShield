@@ -1,0 +1,9 @@
+{
+  "platforms": ["android", "apple"],
+  "android": {
+    "modules": ["ar.com.novasolutions.novashield.NovaShieldModule"]
+  },
+  "apple": {
+    "modules": ["NovaShieldModule"]
+  }
+}

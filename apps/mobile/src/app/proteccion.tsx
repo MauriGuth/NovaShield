@@ -1,0 +1,274 @@
+import { useCallback, useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { ThemedText } from '@/components/themed-text';
+import { ThemedView } from '@/components/themed-view';
+import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
+import { NovaShield, isShieldAvailable } from '@/lib/native-shield';
+import { useShield as useShieldStore } from '@/lib/store';
+import { describeStatus, useShieldController } from '@/lib/use-shield';
+
+/**
+ * Las dos protecciones que corren solas: el Escudo DNS y la Protección de
+ * Mensajes. Se muestran juntas porque comparten la promesa —cuidarte sin que
+ * hagas nada— y porque ambas dependen de un permiso que el usuario debe dar.
+ */
+export default function ProteccionScreen() {
+  const theme = useTheme();
+  const { status, busy, lastSync, enable, disable, sync } = useShieldController();
+  const info = describeStatus(status);
+
+  const domainCount = useShieldStore((s) => s.blocklistDomainCount);
+  const checkedAt = useShieldStore((s) => s.blocklistCheckedAt);
+  const totalBlocked = useShieldStore((s) => s.totalBlocked);
+  const recentBlocks = useShieldStore((s) => s.recentBlocks);
+
+  const [syncing, setSyncing] = useState(false);
+  const [messagesEnabled, setMessagesEnabled] = useState(
+    () => NovaShield?.isMessageProtectionEnabled() ?? false,
+  );
+
+  const isActive = status === 'active';
+  const isProblem = status === 'preempted';
+  const statusColor = isActive
+    ? theme.accent
+    : isProblem
+      ? theme.warn
+      : theme.textSecondary;
+
+  // Al abrir la pantalla revisamos si la lista quedó vieja.
+  useEffect(() => {
+    if (isShieldAvailable) void sync();
+  }, [sync]);
+
+  const refreshList = useCallback(async () => {
+    setSyncing(true);
+    try {
+      await sync({ force: true });
+    } finally {
+      setSyncing(false);
+    }
+  }, [sync]);
+
+  return (
+    <ThemedView style={styles.root}>
+      <SafeAreaView style={styles.safeArea}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}>
+          <View style={styles.header}>
+            <ThemedText type="subtitle">Protección</ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              Lo que te cuida solo, mientras usás el teléfono normalmente.
+            </ThemedText>
+          </View>
+
+          {/* — Escudo DNS — */}
+          <ThemedView type="backgroundElement" style={styles.card}>
+            <View style={styles.cardHeader}>
+              <View style={styles.cardTitle}>
+                <View style={[styles.dot, { backgroundColor: statusColor }]} />
+                <ThemedText type="smallBold">Escudo DNS</ThemedText>
+              </View>
+              <Switch
+                value={isActive}
+                disabled={!isShieldAvailable || busy}
+                onValueChange={(next) => void (next ? enable() : disable())}
+                trackColor={{ true: theme.accent }}
+              />
+            </View>
+
+            <ThemedText type="smallBold" style={{ color: statusColor }}>
+              {info.label}
+            </ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              {info.detail}
+            </ThemedText>
+
+            {status === 'needs_permission' && (
+              <Pressable
+                onPress={() => void enable()}
+                style={({ pressed }) => [
+                  styles.linkButton,
+                  pressed && styles.pressed,
+                ]}>
+                <ThemedText type="smallBold" themeColor="accent">
+                  Completar la activación →
+                </ThemedText>
+              </Pressable>
+            )}
+
+            {busy && <ActivityIndicator color={theme.accent} />}
+
+            {isActive && (
+              <View style={styles.statsRow}>
+                <Stat label="Bloqueos" value={String(totalBlocked)} />
+                <Stat
+                  label="Dominios vigilados"
+                  value={domainCount.toLocaleString('es-AR')}
+                />
+              </View>
+            )}
+          </ThemedView>
+
+          {/* — Lista de bloqueo — */}
+          <ThemedView type="backgroundElement" style={styles.card}>
+            <ThemedText type="smallBold">Lista de amenazas</ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              {domainCount > 0
+                ? `${domainCount.toLocaleString('es-AR')} dominios en el dispositivo. El chequeo se hace acá adentro: ninguna de tus consultas sale del teléfono.`
+                : 'Todavía no descargamos la lista. Se baja una vez y se revisa cada semana.'}
+            </ThemedText>
+            {checkedAt !== null && (
+              <ThemedText type="small" themeColor="textSecondary">
+                Última actualización:{' '}
+                {new Date(checkedAt).toLocaleDateString('es-AR')}
+              </ThemedText>
+            )}
+            {lastSync?.status === 'failed' && (
+              <ThemedText type="small" style={{ color: theme.danger }}>
+                {lastSync.error}
+              </ThemedText>
+            )}
+            <Pressable
+              onPress={() => void refreshList()}
+              disabled={syncing || !isShieldAvailable}
+              style={({ pressed }) => [
+                styles.linkButton,
+                (pressed || syncing) && styles.pressed,
+              ]}>
+              <ThemedText type="smallBold" themeColor="accent">
+                {syncing ? 'Actualizando…' : 'Actualizar ahora'}
+              </ThemedText>
+            </Pressable>
+          </ThemedView>
+
+          {/* — Protección de Mensajes — */}
+          <ThemedView type="backgroundElement" style={styles.card}>
+            <View style={styles.cardHeader}>
+              <View style={styles.cardTitle}>
+                <View
+                  style={[
+                    styles.dot,
+                    {
+                      backgroundColor: messagesEnabled
+                        ? theme.accent
+                        : theme.textSecondary,
+                    },
+                  ]}
+                />
+                <ThemedText type="smallBold">Protección de Mensajes</ThemedText>
+              </View>
+            </View>
+            <ThemedText type="small" themeColor="textSecondary">
+              {messagesEnabled
+                ? 'Revisamos los mensajes que te llegan y te avisamos si detectamos una estafa.'
+                : 'Necesitamos tu permiso para revisar los mensajes entrantes. El análisis se hace en el teléfono.'}
+            </ThemedText>
+            <Pressable
+              onPress={async () => {
+                await NovaShield?.openMessageProtectionSettings();
+                setMessagesEnabled(
+                  NovaShield?.isMessageProtectionEnabled() ?? false,
+                );
+              }}
+              disabled={!isShieldAvailable}
+              style={({ pressed }) => [
+                styles.linkButton,
+                pressed && styles.pressed,
+              ]}>
+              <ThemedText type="smallBold" themeColor="accent">
+                {messagesEnabled ? 'Ver ajustes' : 'Activar'} →
+              </ThemedText>
+            </Pressable>
+          </ThemedView>
+
+          {recentBlocks.length > 0 && (
+            <ThemedView type="backgroundElement" style={styles.card}>
+              <ThemedText type="smallBold">Últimos bloqueos</ThemedText>
+              {recentBlocks.slice(0, 8).map((block) => (
+                <View key={`${block.domain}-${block.at}`} style={styles.blockRow}>
+                  <ThemedText
+                    type="small"
+                    numberOfLines={1}
+                    style={styles.blockDomain}>
+                    {block.domain}
+                  </ThemedText>
+                  <ThemedText type="small" themeColor="textSecondary">
+                    {new Date(block.at).toLocaleTimeString('es-AR', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </ThemedText>
+                </View>
+              ))}
+            </ThemedView>
+          )}
+
+          <ThemedText type="small" themeColor="textSecondary">
+            Nova Shield reduce mucho el riesgo, pero ninguna app bloquea el 100%
+            de las estafas: el sistema operativo pone límites. Tu criterio sigue
+            siendo la mejor defensa.
+          </ThemedText>
+        </ScrollView>
+      </SafeAreaView>
+    </ThemedView>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.stat}>
+      <ThemedText type="smallBold">{value}</ThemedText>
+      <ThemedText type="small" themeColor="textSecondary">
+        {label}
+      </ThemedText>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, flexDirection: 'row', justifyContent: 'center' },
+  safeArea: { flex: 1, maxWidth: MaxContentWidth },
+  content: {
+    padding: Spacing.four,
+    paddingBottom: BottomTabInset + Spacing.four,
+    gap: Spacing.three,
+  },
+  header: { gap: Spacing.two, marginBottom: Spacing.one },
+  card: {
+    borderRadius: Spacing.three,
+    padding: Spacing.three,
+    gap: Spacing.two,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  cardTitle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  dot: { width: 10, height: 10, borderRadius: 5 },
+  statsRow: { flexDirection: 'row', gap: Spacing.five, marginTop: Spacing.one },
+  stat: { gap: Spacing.half },
+  linkButton: { paddingVertical: Spacing.one },
+  pressed: { opacity: 0.6 },
+  blockRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: Spacing.two,
+  },
+  blockDomain: { flexShrink: 1 },
+});

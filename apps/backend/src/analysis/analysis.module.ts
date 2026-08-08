@@ -15,6 +15,12 @@ import { WebRiskService } from './layers/webrisk.service';
     WebRiskService,
     LlmService,
   ],
-  exports: [BlocklistService, WebRiskService, LlmService],
+  exports: [
+    AnalysisService,
+    BlocklistService,
+    HeuristicsService,
+    WebRiskService,
+    LlmService,
+  ],
 })
 export class AnalysisModule {}

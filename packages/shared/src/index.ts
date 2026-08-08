@@ -3,6 +3,10 @@
  * Compartido entre el backend (NestJS) y la app móvil (Expo).
  */
 
+export * from './domain';
+export * from './shield';
+export * from './messages';
+
 /** Nivel de veredicto sobre un enlace analizado. */
 export type VerdictLevel = 'malicious' | 'suspicious' | 'safe' | 'unknown';
 
