@@ -1,0 +1,20 @@
+{
+  "name": "novashield",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Nova Shield — app móvil de ciberseguridad personal contra estafas, fraudes y hackeos (iOS & Android)",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "backend": "npm run start:dev --workspace apps/backend",
+    "backend:build": "npm run build --workspace apps/backend",
+    "backend:test": "npm run test --workspace apps/backend",
+    "mobile": "npm run start --workspace apps/mobile",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

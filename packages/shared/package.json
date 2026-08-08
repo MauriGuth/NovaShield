@@ -1,0 +1,21 @@
+{
+  "name": "@novashield/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Contrato de API y tipos compartidos entre la app móvil y el backend",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "react-native": "src/index.ts",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

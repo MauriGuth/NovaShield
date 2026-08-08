@@ -1,0 +1,37 @@
+# Dependencias
+node_modules/
+
+# Builds
+dist/
+build/
+.expo/
+web-build/
+expo-env.d.ts
+
+# Nativo generado por prebuild (CNG): no se versiona, se regenera con `npx expo prebuild`
+apps/mobile/ios/
+apps/mobile/android/
+
+# Entornos y credenciales
+.env
+.env.*
+!.env.example
+*.pem
+*.p8
+*.p12
+*.mobileprovision
+*.keystore
+credentials.json
+
+# Logs y temporales
+*.log
+npm-debug.log*
+.DS_Store
+coverage/
+.turbo/
+.cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
