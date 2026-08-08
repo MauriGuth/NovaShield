@@ -23,7 +23,18 @@ public class NovaShieldModule: Module {
   /// Debe coincidir con el App Group declarado en los entitlements de la app
   /// y de la extensión: es la única forma de compartir la lista con ella.
   private static let appGroup = "group.ar.com.novasolutions.novashield"
-  private static let tunnelBundleId = "ar.com.novasolutions.novashield.DnsShield"
+
+  /// Bundle id de la extensión de red.
+  ///
+  /// OJO: `@bacons/apple-targets` lo deriva del **`type`** del target, no del
+  /// `name`. Con `type: 'network-packet-tunnel'` y `name: 'DnsShield'`, el
+  /// bundle id real es `…novashield.network-packet-tunnel` — NO `.DnsShield`.
+  ///
+  /// Si esto no coincide exactamente, iOS no encuentra la extensión: el
+  /// diálogo de permiso de VPN no aparece y el túnel nunca arranca, sin ningún
+  /// error que apunte al nombre. `native-parity.spec.ts` verifica que siga
+  /// coincidiendo con lo que declara expo-target.config.js.
+  private static let tunnelBundleId = "ar.com.novasolutions.novashield.network-packet-tunnel"
 
   private var statusObserver: NSObjectProtocol?
 

@@ -15,6 +15,8 @@ export function useShieldController() {
   const [status, setStatus] = useState<ShieldStatus>(() => getShieldStatus());
   const [busy, setBusy] = useState(false);
   const [lastSync, setLastSync] = useState<SyncResult | null>(null);
+  /** Motivo por el que falló la última activación, para mostrarlo en pantalla. */
+  const [error, setError] = useState<string | null>(null);
 
   const setShieldEnabled = useShieldStore((s) => s.setShieldEnabled);
   const recordBlockedDomain = useShieldStore((s) => s.recordBlockedDomain);
@@ -80,6 +82,7 @@ export function useShieldController() {
   const enable = useCallback(async () => {
     if (!NovaShield || busy) return;
     setBusy(true);
+    setError(null);
     try {
       // La lista tiene que estar cargada ANTES de levantar el túnel: si no, el
       // escudo dejaría pasar todo durante los primeros segundos.
@@ -87,11 +90,23 @@ export function useShieldController() {
       const granted = await NovaShield.requestPermission();
       if (!granted) {
         setStatus(NovaShield.getStatus());
+        setError('Necesitamos tu permiso para activar el escudo. Probá de nuevo y aceptá el aviso del sistema.');
         return;
       }
       await NovaShield.start();
       setStatus(NovaShield.getStatus());
       setShieldEnabled(true);
+    } catch (err) {
+      // Sin este catch el error se perdía: el switch volvía solo a apagado y no
+      // aparecía NADA en pantalla. En una app de seguridad eso es lo peor que
+      // puede pasar — el usuario se queda pensando que está protegido, o que la
+      // app está rota, sin forma de saber cuál de las dos.
+      setStatus(NovaShield.getStatus());
+      setError(
+        err instanceof Error
+          ? `No pudimos activar el escudo: ${err.message}`
+          : 'No pudimos activar el escudo. Probá de nuevo.',
+      );
     } finally {
       setBusy(false);
     }
@@ -109,7 +124,7 @@ export function useShieldController() {
     }
   }, [busy, setShieldEnabled]);
 
-  return { status, busy, lastSync, enable, disable, sync };
+  return { status, busy, lastSync, error, enable, disable, sync };
 }
 
 /** Texto de estado listo para mostrar, por plataforma y situación. */

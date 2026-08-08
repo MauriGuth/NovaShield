@@ -27,7 +27,8 @@ import { usePlan } from '@/lib/use-plan';
  */
 export default function ProteccionScreen() {
   const theme = useTheme();
-  const { status, busy, lastSync, enable, disable, sync } = useShieldController();
+  const { status, busy, lastSync, error, enable, disable, sync } =
+    useShieldController();
   const info = describeStatus(status);
   const { can } = usePlan();
   const canUseShield = can('shield');
@@ -125,6 +126,12 @@ export default function ProteccionScreen() {
             )}
 
             {busy && <ActivityIndicator color={theme.accent} />}
+
+            {error && (
+              <ThemedText type="small" style={{ color: theme.danger }}>
+                {error}
+              </ThemedText>
+            )}
 
             {isActive && (
               <View style={styles.statsRow}>

@@ -74,6 +74,32 @@ describe('ShieldBlocklist.swift · las dos copias son idénticas', () => {
     expect(podName).not.toBe(schemeName);
   });
 
+  it('el bundle id del túnel en Swift coincide con el que genera apple-targets', () => {
+    // @bacons/apple-targets deriva el bundle id del `type` del target, no del
+    // `name`. Si el Swift apunta a otro, iOS no encuentra la extensión: no
+    // aparece el diálogo de permiso de VPN y el túnel no arranca nunca, sin
+    // ningún error que mencione el nombre.
+    const targetConfig = readFileSync(
+      join(REPO_ROOT, 'apps/mobile/targets/dns-shield/expo-target.config.js'),
+      'utf8',
+    );
+    const type = /type:\s*'([^']+)'/.exec(targetConfig)?.[1];
+    expect(type).toBeTruthy();
+
+    const appConfig = JSON.parse(
+      readFileSync(join(REPO_ROOT, 'apps/mobile/app.json'), 'utf8'),
+    ) as { expo: { ios: { bundleIdentifier: string } } };
+
+    const expected = `${appConfig.expo.ios.bundleIdentifier}.${type}`;
+    const swift = readFileSync(
+      join(REPO_ROOT, 'apps/mobile/modules/nova-shield/ios/NovaShieldModule.swift'),
+      'utf8',
+    );
+    const declared = /tunnelBundleId\s*=\s*"([^"]+)"/.exec(swift)?.[1];
+
+    expect(declared).toBe(expected);
+  });
+
   it('los archivos de los targets no importan ExpoModulesCore', () => {
     const targetSources = [
       'apps/mobile/targets/dns-shield/PacketTunnelProvider.swift',
