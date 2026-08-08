@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -193,12 +194,45 @@ export default function ProteccionScreen() {
                 <ThemedText type="smallBold">Protección de Mensajes</ThemedText>
               </View>
             </View>
-            <ThemedText type="small" themeColor="textSecondary">
-              {messagesEnabled
-                ? 'Revisamos los mensajes que te llegan y te avisamos si detectamos una estafa.'
-                : 'Necesitamos tu permiso para revisar los mensajes entrantes. El análisis se hace en el teléfono.'}
-            </ThemedText>
-            {canUseMessageGuard ? (
+
+            {/*
+              iOS NO expone si tu filtro de SMS está seleccionado, y tampoco deja
+              abrir esa pantalla de Ajustes desde la app. Así que acá no se
+              afirma "está apagado" —no lo sabemos— ni se ofrece un botón que
+              llevaría a la pantalla equivocada: se dan los pasos exactos.
+              `messagesEnabled` en iOS solo se vuelve true cuando la extensión
+              CORRIÓ de verdad, y eso sí es prueba de que quedó activa.
+            */}
+            {Platform.OS === 'ios' ? (
+              <>
+                <ThemedText type="small" themeColor="textSecondary">
+                  {messagesEnabled
+                    ? 'Está funcionando: ya revisamos mensajes en este teléfono.'
+                    : 'Se activa desde los Ajustes del sistema, en tres pasos. Apple no permite que la app lo haga por vos, ni que sepa si ya lo hiciste.'}
+                </ThemedText>
+                {!messagesEnabled && (
+                  <>
+                    <ThemedText type="small">
+                      1. Ajustes → Apps → Mensajes{'\n'}
+                      2. Tocá “Filtro de mensajes de texto”{'\n'}
+                      3. Elegí Nova Shield
+                    </ThemedText>
+                    <ThemedText type="small" themeColor="textSecondary">
+                      Solo revisa SMS de números que no tenés agendados: Apple no
+                      da acceso a los mensajes de tus contactos ni a iMessage.
+                    </ThemedText>
+                  </>
+                )}
+              </>
+            ) : (
+              <ThemedText type="small" themeColor="textSecondary">
+                {messagesEnabled
+                  ? 'Revisamos los mensajes que te llegan y te avisamos si detectamos una estafa.'
+                  : 'Necesitamos tu permiso para revisar los mensajes entrantes. El análisis se hace en el teléfono.'}
+              </ThemedText>
+            )}
+
+            {canUseMessageGuard && Platform.OS !== 'ios' ? (
               <Pressable
                 onPress={async () => {
                   await NovaShield?.openMessageProtectionSettings();
@@ -215,7 +249,7 @@ export default function ProteccionScreen() {
                   {messagesEnabled ? 'Ver ajustes' : 'Activar'} →
                 </ThemedText>
               </Pressable>
-            ) : (
+            ) : !canUseMessageGuard ? (
               <Link href="/planes" asChild>
                 <Pressable
                   style={({ pressed }) => [styles.linkButton, pressed && styles.pressed]}>
@@ -224,7 +258,7 @@ export default function ProteccionScreen() {
                   </ThemedText>
                 </Pressable>
               </Link>
-            )}
+            ) : null}
             <ThemedText type="small" themeColor="textSecondary">
               Podés pegar cualquier mensaje en el escáner y revisarlo gratis,
               siempre.
