@@ -21,6 +21,8 @@ import type { TypeOrmModuleOptions } from '@nestjs/typeorm';
 export function buildDatabaseOptions(): TypeOrmModuleOptions {
   const url = process.env.DATABASE_URL;
   if (url) {
+    // eslint-disable-next-line no-console
+    console.log('Base de datos: PostgreSQL (DATABASE_URL)');
     return {
       type: 'postgres',
       url,
@@ -29,10 +31,26 @@ export function buildDatabaseOptions(): TypeOrmModuleOptions {
     };
   }
 
+  // En producción, caer a sqlite sería silencioso y peligroso: el archivo vive
+  // en el contenedor, así que cada deploy borraría las familias, y encima el
+  // proceso corre sin permiso de escritura. Antes de eso, error claro.
+  //
+  // Ojo con Railway: agregar un PostgreSQL al proyecto NO inyecta DATABASE_URL
+  // en los demás servicios. Hay que declararla a mano en el servicio del
+  // backend como referencia: DATABASE_URL=${{Postgres.DATABASE_URL}}
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'Falta DATABASE_URL. En producción el Modo Familia necesita PostgreSQL; ' +
+        'en Railway declarala en el servicio del backend como ${{Postgres.DATABASE_URL}}.',
+    );
+  }
+
   const database = process.env.FAMILY_DB_PATH ?? join(process.cwd(), 'data', 'novashield.sqlite');
   if (database !== ':memory:') {
     mkdirSync(dirname(database), { recursive: true });
   }
+  // eslint-disable-next-line no-console
+  console.log(`Base de datos: sqlite (${database})`);
 
   return {
     type: 'better-sqlite3',

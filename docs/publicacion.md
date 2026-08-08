@@ -249,7 +249,15 @@ El repo trae un `Dockerfile` en la raíz. Es a propósito: la detección automá
 1. En [railway.app](https://railway.app) → **New Project → Deploy from GitHub repo** → elegí `MauriGuth/NovaShield`.
 2. En **Settings → Source**, poné la rama `claude/mobile-app-ios-android-8ne6ky` (o `main` cuando mergees).
 3. Railway detecta el `Dockerfile` de la raíz solo. Si no, en **Settings → Build** elegí *Dockerfile* y dejá el path en `Dockerfile`.
-4. **New → Database → PostgreSQL** dentro del mismo proyecto. Railway crea `DATABASE_URL` y la inyecta.
+4. **New → Database → PostgreSQL** dentro del mismo proyecto.
+
+   **Ojo con esto**: agregar el Postgres NO inyecta `DATABASE_URL` en el servicio del backend. Hay que declararla a mano en **Variables** del backend, como referencia:
+
+   ```
+   DATABASE_URL=${{Postgres.DATABASE_URL}}
+   ```
+
+   Sin eso el backend arranca y muere con un error explícito (`Falta DATABASE_URL`), y el deploy se queda colgado en "Performing healthchecks".
 5. En **Variables** del servicio del backend, agregá:
 
 | Variable | Valor | Nota |
