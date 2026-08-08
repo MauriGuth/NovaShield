@@ -14,6 +14,11 @@ async function bootstrap() {
     origin: process.env.ALLOWED_ORIGINS?.split(',') ?? true,
   });
 
-  await app.listen(process.env.PORT ?? 3000);
+  // 0.0.0.0 explícito: dentro de un contenedor, escuchar solo en localhost deja
+  // el servicio inalcanzable desde afuera y el proxy responde 502 sin que en
+  // los logs de la app aparezca nada raro.
+  const port = Number(process.env.PORT ?? 3000);
+  await app.listen(port, '0.0.0.0');
+  console.log(`Nova Shield API escuchando en 0.0.0.0:${port}`);
 }
 bootstrap();

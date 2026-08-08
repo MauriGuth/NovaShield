@@ -56,6 +56,7 @@ COPY --from=build /app/apps/backend/package.json apps/backend/package.json
 
 USER nova
 
-# Railway inyecta PORT; main.ts ya lo respeta.
-EXPOSE 3000
+# Railway inyecta PORT y su proxy apunta al 8080 por defecto; main.ts respeta
+# la variable, así que el contenedor sirve en el puerto que le manden.
+EXPOSE 8080
 CMD ["node", "apps/backend/dist/main"]
