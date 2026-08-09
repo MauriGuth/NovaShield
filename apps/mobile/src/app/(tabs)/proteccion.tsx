@@ -49,8 +49,28 @@ export default function ProteccionScreen() {
   const [diagnostics, setDiagnostics] = useState(() =>
     NovaShield?.getShieldDiagnostics?.(),
   );
+  const [bypassSuspected, setBypassSuspected] = useState(false);
+  const shieldIsActive = status === 'active';
+
   useEffect(() => {
-    const refresh = () => setDiagnostics(NovaShield?.getShieldDiagnostics?.());
+    // El momento en que el escudo pasó a activo queda capturado en el closure:
+    // el efecto se re-ejecuta cuando cambia `shieldIsActive`. Evita tanto leer
+    // el reloj durante el render como mutar un ref, que el compilador de React
+    // rechaza (y con razón: las dos cosas rompen el renderizado puro).
+    const activeSince = Date.now();
+
+    const refresh = () => {
+      const fresh = NovaShield?.getShieldDiagnostics?.();
+      setDiagnostics(fresh);
+      setBypassSuspected(
+        shieldIsActive &&
+          fresh?.available === false &&
+          Date.now() - activeSince > 60_000,
+      );
+    };
+
+    // No se llama en el cuerpo del efecto para no escribir estado de forma
+    // sincrónica; el primer refresco llega con el primer tick.
     const timer = setInterval(refresh, 3000);
     const sub = AppState.addEventListener('change', (next) => {
       if (next === 'active') refresh();
@@ -59,12 +79,13 @@ export default function ProteccionScreen() {
       clearInterval(timer);
       sub.remove();
     };
-  }, []);
+  }, [shieldIsActive]);
   const [messagesEnabled, setMessagesEnabled] = useState(
     () => NovaShield?.isMessageProtectionEnabled() ?? false,
   );
 
   const isActive = status === 'active';
+
   const isProblem = status === 'preempted';
   const statusColor = isActive
     ? theme.accent
@@ -161,6 +182,42 @@ export default function ProteccionScreen() {
                   value={domainCount.toLocaleString('es-AR')}
                 />
               </View>
+            )}
+
+            {/*
+              El escudo puede estar "activo" y no ver una sola consulta: pasa
+              cuando algo cifra el DNS por fuera del túnel —Retransmisión
+              privada de iCloud es la causa más común— o cuando hay otro perfil
+              de DNS instalado.
+
+              Apple no deja ni cambiar ese ajuste ni linkear a esa pantalla, así
+              que lo único honesto es detectarlo y decir dónde tocar. Detectarlo
+              es posible porque el túnel publica sus contadores: si en un minuto
+              de estar activo no vio NI UN paquete, algo lo está esquivando.
+
+              Sin este aviso el usuario cree que está protegido y no lo está,
+              que es el peor estado posible para este producto.
+            */}
+            {isActive && bypassSuspected && (
+              <ThemedView type="background" style={styles.warningCard}>
+                <ThemedText type="smallBold" style={{ color: theme.warn }}>
+                  El escudo está activo pero no ve tu navegación
+                </ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  Algo está resolviendo los dominios por fuera del escudo, así
+                  que no podemos bloquear nada. Casi siempre es la Retransmisión
+                  privada de iCloud. Para apagarla:
+                </ThemedText>
+                <ThemedText type="small">
+                  1. Ajustes → tocá tu nombre (arriba de todo){'\n'}
+                  2. iCloud → Retransmisión privada{'\n'}
+                  3. Apagala y volvé acá
+                </ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  Si no la tenés activada, revisá en Ajustes → General → VPN, DNS
+                  y dispositivos que no haya otro DNS configurado.
+                </ThemedText>
+              </ThemedView>
             )}
 
             {/*
@@ -367,6 +424,11 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   dot: { width: 10, height: 10, borderRadius: 5 },
+  warningCard: {
+    borderRadius: Spacing.two,
+    padding: Spacing.three,
+    gap: Spacing.two,
+  },
   statsRow: { flexDirection: 'row', gap: Spacing.five, marginTop: Spacing.one },
   stat: { gap: Spacing.half },
   linkButton: { paddingVertical: Spacing.one },
