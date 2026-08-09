@@ -190,6 +190,8 @@ Los cuatro quedaron con test de regresión en `native-parity.spec.ts`.
 
 Vale la pena el detalle de método: los dos primeros son invisibles para cualquier revisión de código —el archivo se lee perfecto— y el segundo ni siquiera lo encuentra `compileReleaseKotlin`. Solo aparecen armando el APK entero. Compilar Android localmente antes de mandar a EAS deja de ser un lujo: es la diferencia entre encontrarlos en minutos o en tandas de veinte.
 
+Con los cuatro corregidos, `./gradlew :app:assembleRelease` produce un APK completo (108 MB, 5 dex, `index.android.bundle` adentro). Verificado en el APK: los dos servicios en el manifest, `foregroundServiceType="systemExempted"`, los permisos de VPN y notificaciones, y las clases del módulo (`DnsShieldVpnService`, `MessageGuardService`, `NovaShieldModule`, `Blocklist`, `ShieldBus`, `DevicePosture`) — con un solo `BuildConfig` y un solo `R`.
+
 Además se llevó Android a la misma altura que iOS en las dos cosas que el hardware había enseñado allá:
 
 - **Notificación al bloquear**, con el mismo throttling (30 s entre avisos, 10 min por dominio). Sin esto, bloquear se ve igual que quedarse sin internet.

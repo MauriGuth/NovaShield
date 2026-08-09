@@ -125,7 +125,7 @@ Con el escudo activo, abrí en el navegador un dominio de la lista (`login.00230
 
 Si no bloquea, mirá la línea de **Diagnóstico** abajo del escudo (aparece porque el build es de prueba): `paquetes` en 0 significa que el DNS no está entrando al túnel; `consultas` en 0 con paquetes > 0, que entra pero no se parsea; `bloqueos` en 0 con consultas > 0, que el dominio no está en la lista o la canonicalización difiere.
 
-**Advertencia honesta**: el `VpnService` y el `NotificationListenerService` nunca corrieron en un teléfono. El código compila (se verificó con el SDK de Android y Gradle, ver `decisiones-tecnicas.md`), pero eso no dice nada del comportamiento. Este build es para descubrir qué se rompe.
+**Advertencia honesta**: el `VpnService` y el `NotificationListenerService` nunca corrieron en un teléfono. El APK de release se arma entero (verificado localmente con el SDK de Android y Gradle, ver `decisiones-tecnicas.md`), pero que compile no dice nada del comportamiento. Este build es para descubrir qué se rompe.
 
 ---
 
