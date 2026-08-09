@@ -103,6 +103,12 @@ export function useShieldController() {
       // La lista tiene que estar cargada ANTES de levantar el túnel: si no, el
       // escudo dejaría pasar todo durante los primeros segundos.
       await sync();
+
+      // Se pide junto con el escudo y no en el arranque de la app: acá el
+      // usuario ya entendió para qué sirve, así que el permiso tiene sentido.
+      // Si lo rechaza, el escudo funciona igual — solo pierde el aviso.
+      await NovaShield.requestNotificationPermission?.().catch(() => false);
+
       const granted = await NovaShield.requestPermission();
       if (!granted) {
         setStatus(NovaShield.getStatus());

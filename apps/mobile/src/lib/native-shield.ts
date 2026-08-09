@@ -57,6 +57,12 @@ export interface NovaShieldNative {
   getBlockedCount(): number;
 
   /**
+   * Pide permiso de notificaciones (solo iOS; en Android el canal ya existe).
+   * Sin esto, un bloqueo se ve igual que quedarse sin internet.
+   */
+  requestNotificationPermission?(): Promise<boolean>;
+
+  /**
    * Bloqueos registrados por la extensión (solo iOS).
    *
    * En Android llegan por el evento `onDomainBlocked`; en iOS la extensión es

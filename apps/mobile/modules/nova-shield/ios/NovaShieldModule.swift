@@ -1,4 +1,5 @@
 import ExpoModulesCore
+import UserNotifications
 import NetworkExtension
 
 /**
@@ -157,6 +158,20 @@ public class NovaShieldModule: Module {
         "count": defaults.integer(forKey: "blockedCount"),
         "recent": recent,
       ]
+    }
+
+    /**
+     Pide permiso de notificaciones.
+
+     Lo pide la APP, no la extensión: iOS solo acepta la solicitud desde el
+     proceso principal. Sin este permiso, bloquear un sitio se ve igual que
+     quedarse sin internet y el usuario culpa a la app por romperle la conexión.
+     */
+    AsyncFunction("requestNotificationPermission") { (promise: Promise) in
+      UNUserNotificationCenter.current()
+        .requestAuthorization(options: [.alert, .sound]) { granted, _ in
+          promise.resolve(granted)
+        }
     }
 
     Function("getBlocklistDirectory") { () -> String in

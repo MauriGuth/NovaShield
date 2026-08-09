@@ -1,5 +1,6 @@
 import Foundation
 import NetworkExtension
+import UserNotifications
 import os.log
 
 /**
@@ -72,6 +73,11 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
   /// Tope de bloqueos recientes guardados para que los muestre la app.
   private static let maxRecentBlocked = 50
+
+  /// Límites del aviso: una carga de página dispara decenas de consultas al
+  /// mismo dominio, y avisar por cada una convertiría la protección en spam.
+  private static let notifyMinGap: TimeInterval = 30
+  private static let notifyPerDomainGap: TimeInterval = 600
 
   override func startTunnel(
     options: [String: NSObject]?,
@@ -212,6 +218,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     if ShieldBlocklist.shared.isBlocked(query.domain) {
       blockedCount += 1
       persistBlocked(domain: query.domain)
+      notifyBlocked(domain: query.domain)
       let response = DnsPacketParser.buildNxDomainResponse(for: query)
       packetFlow.writePackets([response], withProtocols: [NSNumber(value: AF_INET)])
       return
@@ -304,6 +311,54 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
       recent = Array(recent.prefix(Self.maxRecentBlocked))
     }
     defaults.set(recent, forKey: "recentBlocked")
+  }
+
+  /**
+   Avisa al usuario que bloqueamos un sitio.
+
+   Sin esto, bloquear se ve EXACTAMENTE igual que quedarse sin internet: el
+   navegador muestra "no se puede conectar" y la persona concluye que la app le
+   rompió la conexión. Es el peor resultado posible — el momento en que el
+   producto más sirve se lee como una falla, y termina con el escudo apagado.
+
+   Se limita fuerte para no volverse ruido: una sola notificación por dominio
+   cada 10 minutos, y nunca dos en menos de 30 segundos. Una sola carga de
+   página dispara decenas de consultas al mismo dominio.
+   */
+  private func notifyBlocked(domain: String) {
+    guard let defaults = UserDefaults(suiteName: Self.appGroup) else { return }
+
+    let now = Date().timeIntervalSince1970
+    let lastAny = defaults.double(forKey: "lastNotifyAt")
+    guard now - lastAny > Self.notifyMinGap else { return }
+
+    var recent = defaults.dictionary(forKey: "notifiedDomains") as? [String: Double] ?? [:]
+    if let last = recent[domain], now - last < Self.notifyPerDomainGap { return }
+
+    // Se purgan las entradas viejas para que el diccionario no crezca solo.
+    recent = recent.filter { now - $0.value < Self.notifyPerDomainGap }
+    recent[domain] = now
+    defaults.set(recent, forKey: "notifiedDomains")
+    defaults.set(now, forKey: "lastNotifyAt")
+
+    let content = UNMutableNotificationContent()
+    content.title = "Bloqueamos un sitio peligroso"
+    content.body =
+      "No dejamos que se abra \(domain): figura en las bases de sitios de estafa. "
+      + "Si llegaste por un mensaje, no respondas y borralo."
+    content.sound = .default
+
+    // trigger nil = se entrega de inmediato.
+    let request = UNNotificationRequest(
+      identifier: "blocked-\(domain)-\(Int(now))",
+      content: content,
+      trigger: nil)
+    UNUserNotificationCenter.current().add(request) { [weak self] error in
+      if let error, let self {
+        os_log("No se pudo avisar del bloqueo: %{public}@", log: self.log, type: .error,
+               error.localizedDescription)
+      }
+    }
   }
 
   private func updateStatus(_ status: String) {
