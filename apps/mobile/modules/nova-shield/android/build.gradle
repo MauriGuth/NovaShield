@@ -7,7 +7,18 @@ group = 'ar.com.novasolutions.novashield'
 version = '0.1.0'
 
 android {
-  namespace "ar.com.novasolutions.novashield"
+  // OJO: NO puede ser igual al `package` de la app (ar.com.novasolutions.novashield).
+  //
+  // El namespace decide dónde se generan BuildConfig y R. Si la librería usa el
+  // mismo que la app, las dos generan `ar.com.novasolutions.novashield.BuildConfig`
+  // y el build muere recién en `mergeDexRelease`, después de compilar todo, con
+  // "Type ... is defined multiple times". Es el mismo error de fondo que el
+  // podspec homónimo en iOS: dos cosas distintas peleándose un nombre.
+  //
+  // Las clases Kotlin siguen en `ar.com.novasolutions.novashield` —el namespace
+  // no las mueve— así que el manifest, el autolinking y expo-module.config.json
+  // no cambian.
+  namespace "ar.com.novasolutions.novashield.nativemodule"
   defaultConfig {
     versionCode 1
     versionName "0.1.0"

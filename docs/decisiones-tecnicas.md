@@ -179,13 +179,16 @@ Y dos defectos de producto que el hardware hizo evidentes:
 
 ## Preparación de Android (09-08-2026) — lo que encontró el primer compilado
 
-El código nativo de Android nunca se había compilado. Compilarlo de verdad (SDK + Gradle, `:nova-shield:compileReleaseKotlin` y el merge del manifest) encontró tres cosas antes de gastar un build de EAS:
+El código nativo de Android nunca se había compilado. Compilarlo de verdad —SDK de Android + Gradle, hasta el APK de release— encontró cuatro cosas antes de gastar un build de EAS:
 
 1. **Faltaba `androidx.activity`.** `AppContextActivityResultLauncher.launch` recibe un `ActivityResultCallback`, pero expo-modules-core declara esa librería como `implementation`: no llega transitivamente. Sin la dependencia explícita, el diálogo de consentimiento de VPN no compila. Es el equivalente Android del podspec sin nombre propio: invisible en la lectura, fatal al compilar.
-2. **`Notification.Builder(Context, String)` existe recién en API 26 y el `minSdk` efectivo es 24.** En un teléfono con Android 7 —justo los equipos viejos que más nos importan— activar el escudo reventaba con `NoSuchMethodError`. Se pasó todo a `NotificationCompat`.
-3. **El perfil de EAS no pedía APK.** Un `.aab` no se instala en un teléfono: el build habría "salido bien" y el archivo no habría servido para probar nada.
+2. **El `namespace` del módulo era igual al `package` de la app.** El namespace decide dónde se generan `BuildConfig` y `R`, así que las dos generaban `ar.com.novasolutions.novashield.BuildConfig`. El build no falla al compilar: llega hasta `mergeDexRelease` —veinte minutos adentro, con todo ya compilado— y recién ahí muere con "Type … is defined multiple times". Mismo error de fondo que el podspec homónimo en iOS: dos cosas distintas peleándose un nombre, y ninguna de las dos avisa hasta el final.
+3. **`Notification.Builder(Context, String)` existe recién en API 26 y el `minSdk` efectivo es 24.** En un teléfono con Android 7 —justo los equipos viejos que más nos importan— activar el escudo reventaba con `NoSuchMethodError`. Se pasó todo a `NotificationCompat`.
+4. **El perfil de EAS no pedía APK.** Un `.aab` no se instala en un teléfono: el build habría "salido bien" y el archivo no habría servido para probar nada.
 
-Los tres quedaron con test de regresión en `native-parity.spec.ts`.
+Los cuatro quedaron con test de regresión en `native-parity.spec.ts`.
+
+Vale la pena el detalle de método: los dos primeros son invisibles para cualquier revisión de código —el archivo se lee perfecto— y el segundo ni siquiera lo encuentra `compileReleaseKotlin`. Solo aparecen armando el APK entero. Compilar Android localmente antes de mandar a EAS deja de ser un lujo: es la diferencia entre encontrarlos en minutos o en tandas de veinte.
 
 Además se llevó Android a la misma altura que iOS en las dos cosas que el hardware había enseñado allá:
 

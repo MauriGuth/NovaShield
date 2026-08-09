@@ -130,6 +130,26 @@ describe('módulo Android · trampas que solo aparecen al compilar', () => {
     expect(gradle).toMatch(/androidx\.activity:activity/);
   });
 
+  it('el namespace del módulo NO es el mismo que el package de la app', () => {
+    // El namespace decide dónde se generan BuildConfig y R. Si la librería usa
+    // el de la app, las dos generan la misma clase y el build muere recién en
+    // `mergeDexRelease` —después de compilar TODO, veinte minutos adentro— con
+    // "Type ar.com.novasolutions.novashield.BuildConfig is defined multiple
+    // times". Mismo error de fondo que el podspec homónimo en iOS.
+    const gradle = readFileSync(
+      join(REPO_ROOT, ANDROID_MODULE, 'build.gradle'),
+      'utf8',
+    );
+    const namespace = /namespace\s+"([^"]+)"/.exec(gradle)?.[1];
+    expect(namespace).toBeTruthy();
+
+    const appConfig = JSON.parse(
+      readFileSync(join(REPO_ROOT, 'apps/mobile/app.json'), 'utf8'),
+    ) as { expo: { android: { package: string } } };
+
+    expect(namespace).not.toBe(appConfig.expo.android.package);
+  });
+
   it('no usa Notification.Builder con canal (existe recién en API 26 y minSdk es 24)', () => {
     // `Notification.Builder(Context, String)` se agregó en Android 8. En un
     // teléfono con Android 7 —que son justo los que más nos importan, gente con
