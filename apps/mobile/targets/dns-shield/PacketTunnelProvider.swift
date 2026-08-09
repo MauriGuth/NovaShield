@@ -145,6 +145,17 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     }
   }
 
+  /// Publica los contadores en el App Group para que la app los muestre.
+  /// Solo números: ningún dominio sale de la extensión, ni siquiera a disco.
+  private func publishDiagnostics() {
+    guard let defaults = UserDefaults(suiteName: Self.appGroup) else { return }
+    defaults.set(packetsSeen, forKey: "diagPackets")
+    defaults.set(queriesParsed, forKey: "diagQueries")
+    defaults.set(blockedCount, forKey: "diagBlocked")
+    defaults.set(ShieldBlocklist.shared.domainCount, forKey: "diagListCount")
+    defaults.set(Date().timeIntervalSince1970, forKey: "diagAt")
+  }
+
   // MARK: - Lista de bloqueo
 
   private func loadBlocklist() throws {
@@ -179,11 +190,16 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
   private func handle(_ packet: Data) {
     packetsSeen += 1
-    // Cada 20 paquetes: una foto del estado, sin ningún dato de navegación.
-    if packetsSeen % 20 == 1 {
+    // Cada 10 paquetes: una foto del estado, sin ningún dato de navegación.
+    // Va a UserDefaults del App Group para que la app pueda MOSTRARLO en
+    // pantalla: pedirle a alguien que abra Consola.app y filtre logs no es un
+    // camino de soporte razonable, ni siquiera para nosotros mismos.
+    // `type: .default` y no `.info`, porque Consola oculta los info por defecto.
+    if packetsSeen % 10 == 1 {
+      publishDiagnostics()
       os_log(
         "Diagnóstico · paquetes:%d consultas:%d bloqueos:%d lista:%d",
-        log: log, type: .info,
+        log: log, type: .default,
         packetsSeen, queriesParsed, blockedCount, ShieldBlocklist.shared.domainCount)
     }
 

@@ -115,6 +115,31 @@ public class NovaShieldModule: Module {
       }
     }
 
+    /**
+     Contadores que publica la extensión del túnel.
+
+     Existen porque diagnosticar el escudo de otra forma exige conectar el
+     teléfono a una Mac y filtrar logs en Consola.app — inviable para soporte, y
+     un dolor incluso para nosotros. Con estos tres números se distingue si el
+     DNS no entra al túnel, si entra y no se parsea, o si se parsea y no matchea.
+
+     Son SOLO números. Ningún dominio sale de la extensión.
+     */
+    Function("getShieldDiagnostics") { () -> [String: Any] in
+      guard let defaults = UserDefaults(suiteName: Self.appGroup) else {
+        return ["available": false]
+      }
+      let at = defaults.double(forKey: "diagAt")
+      return [
+        "available": at > 0,
+        "packets": defaults.integer(forKey: "diagPackets"),
+        "queries": defaults.integer(forKey: "diagQueries"),
+        "blocked": defaults.integer(forKey: "diagBlocked"),
+        "listCount": defaults.integer(forKey: "diagListCount"),
+        "at": at,
+      ]
+    }
+
     Function("getBlocklistDirectory") { () -> String in
       // La lista tiene que vivir en el App Group: es el único lugar que la
       // extensión de red puede leer.

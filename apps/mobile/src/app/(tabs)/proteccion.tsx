@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   Platform,
   Pressable,
   ScrollView,
@@ -17,6 +18,7 @@ import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { NovaShield, isShieldAvailable } from '@/lib/native-shield';
+import { isUnlockedForTesting } from '@/lib/purchases';
 import { useShield as useShieldStore } from '@/lib/store';
 import { describeStatus, useShieldController } from '@/lib/use-shield';
 import { usePlan } from '@/lib/use-plan';
@@ -41,6 +43,23 @@ export default function ProteccionScreen() {
   const recentBlocks = useShieldStore((s) => s.recentBlocks);
 
   const [syncing, setSyncing] = useState(false);
+
+  // Se relee al volver al frente: los contadores los actualiza la extensión,
+  // que corre en otro proceso, así que no llega ningún evento.
+  const [diagnostics, setDiagnostics] = useState(() =>
+    NovaShield?.getShieldDiagnostics?.(),
+  );
+  useEffect(() => {
+    const refresh = () => setDiagnostics(NovaShield?.getShieldDiagnostics?.());
+    const timer = setInterval(refresh, 3000);
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') refresh();
+    });
+    return () => {
+      clearInterval(timer);
+      sub.remove();
+    };
+  }, []);
   const [messagesEnabled, setMessagesEnabled] = useState(
     () => NovaShield?.isMessageProtectionEnabled() ?? false,
   );
@@ -142,6 +161,20 @@ export default function ProteccionScreen() {
                   value={domainCount.toLocaleString('es-AR')}
                 />
               </View>
+            )}
+
+            {/*
+              Diagnóstico del túnel, solo en builds de prueba. Son contadores
+              (nunca dominios) que dicen dónde se corta la cadena: sin esto hay
+              que conectar el teléfono a una Mac y filtrar Consola.app, que no
+              es un camino de soporte viable.
+            */}
+            {isActive && isUnlockedForTesting && diagnostics && (
+              <ThemedText type="small" themeColor="textSecondary">
+                {diagnostics.available
+                  ? `Diagnóstico · paquetes: ${diagnostics.packets} · consultas: ${diagnostics.queries} · bloqueos: ${diagnostics.blocked} · lista: ${diagnostics.listCount}`
+                  : 'Diagnóstico · el túnel todavía no reportó ningún paquete.'}
+              </ThemedText>
             )}
           </ThemedView>
 

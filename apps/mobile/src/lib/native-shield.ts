@@ -56,6 +56,20 @@ export interface NovaShieldNative {
   getLoadedDomainCount(): number;
   getBlockedCount(): number;
 
+  /**
+   * Contadores del túnel (solo iOS por ahora). Números, nunca dominios.
+   * Sirven para saber en qué punto se corta la cadena sin pedirle a nadie que
+   * conecte el teléfono a una Mac y filtre logs.
+   */
+  getShieldDiagnostics?(): {
+    available: boolean;
+    packets?: number;
+    queries?: number;
+    blocked?: number;
+    listCount?: number;
+    at?: number;
+  };
+
   // — Escáner del Dispositivo —
   /**
    * Señales de postura de seguridad, todas leídas localmente y sin permisos.
