@@ -36,6 +36,26 @@ export function normalizeText(text: string): string {
     .replace(/[\u0300-\u036f]/g, ''); // marcas diacríticas combinantes
 }
 
+/**
+ * Verbos de "dame el código", en las formas de SEGUNDA persona.
+ *
+ * La distinción es deliberada y es lo que separa un pedido de una entrega:
+ * "pasame el código" es la estafa, "te paso el código" es alguien dándote algo.
+ * Por eso solo entran los sufijos imperativos y de vos/tú, y nunca la primera
+ * persona ("paso", "mando"): sin esa restricción, "te comparto el código de
+ * descuento" dispararía una alerta crítica.
+ *
+ * `reenvi`, `compart` y `copi` se agregaron después de medir contra frases
+ * reales: seis de cada diez formas naturales de pedir un código se escapaban,
+ * y "me lo reenviás?" —la más común de todas— era una de ellas.
+ */
+const PEDIDO_2A_PERSONA =
+  '(?:(?:pas|mand|envi|reenvi|compart|copi|dict)(?:a|as|ame|amelo|arme|is|ime|irme|es|eme|ermelo)?|decime|decis|decirme|dime|dimelo)';
+
+/** Solo se acepta el infinitivo cuando lo precede un marcador de pedido. */
+const MARCADOR_DE_PEDIDO =
+  '(?:podes|podrias|puedes|podrias|necesito|necesitaria|quiero|dale|porfa|por favor|urgente)';
+
 export const SCAM_PATTERNS: ScamPattern[] = [
   {
     code: 'WHATSAPP_CODE_REQUEST',
@@ -45,11 +65,39 @@ export const SCAM_PATTERNS: ScamPattern[] = [
     detail:
       'Nadie legítimo necesita el código de 6 dígitos que te llega por SMS: con ese código te roban la cuenta de WhatsApp y después le piden plata a tus contactos haciéndose pasar por vos. No lo compartas nunca, ni con alguien que parezca conocido.',
     patterns: [
-      /\bcodigo\b[^.!?]{0,40}\b(te (lo )?)?(mand|envi|pas|manda|envia|pasa)/,
-      /\b(pas|mand|envi)(a|ame|arme|as)?\b[^.!?]{0,30}\bcodigo\b/,
+      // El código primero y el pedido después: "el código que te llegó, pasámelo".
+      new RegExp(`\\bcodigo\\b[^.!?]{0,60}\\b(?:te (?:lo )?)?${PEDIDO_2A_PERSONA}\\b`),
+      // El pedido primero: "reenviame el código".
+      new RegExp(`\\b${PEDIDO_2A_PERSONA}\\b[^.!?]{0,30}\\bcodigo\\b`),
+      // Infinitivo, pero solo detrás de un marcador de pedido: "¿podés reenviar
+      // el código?" sí; "voy a enviar el código" no.
+      new RegExp(
+        `\\b${MARCADOR_DE_PEDIDO}\\b[^.!?]{0,25}\\b(?:pas|mand|envi|reenvi|compart|copi)ar\\b[^.!?]{0,30}\\bcodigo\\b`,
+      ),
+      // Pedido sin verbo de envío: "necesito el código de verificación".
+      // Exige que el código esté calificado, para no marcar "necesito el código
+      // postal" ni "dame el código de la alarma".
+      new RegExp(
+        `\\b(?:necesito|necesitaria|dame|damelo|quiero)\\b[^.!?]{0,25}\\bcodigo\\b[^.!?]{0,30}\\b(?:de (?:6|seis) digitos|de verificacion|de whatsapp|que te (?:llego|mandaron|enviaron))\\b`,
+      ),
+      // Los patrones de arriba no cruzan fin de oración, a propósito. Pero el
+      // pedido real casi siempre viene partido en dos: "te llegó un código?
+      // necesito que me lo reenvíes". Este mira el mensaje entero y exige las
+      // dos piezas: la palabra "código" y un clítico de objeto —"me lo"— con un
+      // verbo de envío. Ese "me lo" es el signo lingüístico exacto del pedido:
+      // marca que la cosa la tenés vos y la quieren ellos. "Te mando el código"
+      // no lo tiene, y por eso no matchea.
+      new RegExp(
+        `^(?=[\\s\\S]*\\bcodigo\\b)(?=[\\s\\S]*\\b(?:me lo|melo|me la)\\s*(?:pas|mand|envi|reenvi|compart|copi))`,
+      ),
       /codigo\b[^.!?]{0,30}\b(por error|equivocad)/,
-      /\b(6|seis)\s*(digitos|numeros)\b[^.!?]{0,40}\b(pas|mand|envi)/,
-      /\bverificacion\b[^.!?]{0,30}\b(pas|mand|envi|decime|deci)/,
+      /\b(6|seis)\s*(digitos|numeros)\b[^.!?]{0,40}\b(pas|mand|envi|reenvi|compart)/,
+      /\bverificacion\b[^.!?]{0,30}\b(pas|mand|envi|reenvi|compart|decime|deci)/,
+    ],
+    unless: [
+      // Códigos que sí se comparten sin riesgo. Van acá y no como excepciones
+      // dentro de cada patrón para que sea una sola lista auditable.
+      /\bcodigo\b[^.!?]{0,15}\b(de descuento|promocional|de referid|postal|de barras|qr|de la alarma|del wifi|del portero)\b/,
     ],
   },
   {

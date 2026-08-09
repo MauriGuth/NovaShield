@@ -22,6 +22,50 @@ describe('matchScamPatterns · casos reales argentinos', () => {
     expect(result.score).toBeGreaterThanOrEqual(80);
   });
 
+  /**
+   * Estas frases salieron de medir contra el backend en producción: seis de
+   * diez formas naturales de pedir un código pasaban como seguras, incluida
+   * "me lo reenviás?", que es la más común de todas. Un patrón que solo
+   * reconoce la forma en que lo escribiríamos nosotros no sirve de nada.
+   */
+  describe('el pedido del código, en las formas en que se pide de verdad', () => {
+    const PIDEN_EL_CODIGO = [
+      'me pasas el codigo que te llego por SMS?',
+      'me lo reenvias? es el codigo de 6 digitos',
+      'me podes reenviar el codigo de verificacion',
+      'reenviame el codigo por favor',
+      'me compartis el codigo que te llego?',
+      'decime el codigo que te mandaron',
+      'copiame el codigo del mensaje',
+      'mandame el codigo',
+      'necesito el codigo de 6 digitos que te llego',
+      'te llego un codigo? necesito que me lo reenvies',
+      'pasame el codigo de verificacion urgente',
+    ];
+
+    it.each(PIDEN_EL_CODIGO)('detecta: %s', (frase) => {
+      expect(codes(frase)).toContain('WHATSAPP_CODE_REQUEST');
+    });
+
+    /**
+     * La contracara: hay códigos que se comparten todo el tiempo sin ningún
+     * riesgo. Marcarlos entrenaría a la gente a ignorar la alerta, y una alerta
+     * ignorada no protege de nada.
+     */
+    const CODIGOS_INOCENTES = [
+      'te comparto el codigo de descuento: NOVA20',
+      'el codigo de la alarma es 1234',
+      'te paso el codigo del wifi',
+      'necesito el codigo postal para el envio',
+      'te mando el codigo de barras del producto',
+      'ya te envie el codigo de referido',
+    ];
+
+    it.each(CODIGOS_INOCENTES)('no marca: %s', (frase) => {
+      expect(codes(frase)).not.toContain('WHATSAPP_CODE_REQUEST');
+    });
+  });
+
   it('detecta el cuento del familiar con número nuevo', () => {
     expect(
       codes('Hola pa, cambié de número, este es mi nuevo whatsapp'),
