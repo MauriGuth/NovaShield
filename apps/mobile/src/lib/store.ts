@@ -49,6 +49,15 @@ interface ShieldState {
     domainCount: number;
   }) => void;
   recordBlockedDomain: (domain: string, at: number) => void;
+  /**
+   * Bloqueos que reporta la extensión de iOS. Se SETEA el total (no se suma):
+   * la extensión lleva su propia cuenta y la app la consulta cada tanto, así
+   * que acumular sumaría el mismo bloqueo una vez por consulta.
+   */
+  syncNativeBlocks: (info: {
+    count: number;
+    recent: BlockedDomain[];
+  }) => void;
 
   // — Protección de Mensajes —
   messageAlerts: StoredAlert[];
@@ -147,6 +156,19 @@ export const useShield = create<ShieldState>()(
             MAX_RECENT_BLOCKS,
           ),
         })),
+
+      syncNativeBlocks: ({ count, recent }) =>
+        set((state) => {
+          // Se fusiona por (dominio, momento) para no duplicar entre lecturas.
+          const seen = new Set(state.recentBlocks.map((b) => `${b.domain}@${b.at}`));
+          const nuevos = recent.filter((b) => !seen.has(`${b.domain}@${b.at}`));
+          return {
+            totalBlocked: Math.max(state.totalBlocked, count),
+            recentBlocks: [...nuevos, ...state.recentBlocks]
+              .sort((a, b) => b.at - a.at)
+              .slice(0, MAX_RECENT_BLOCKS),
+          };
+        }),
 
       messageAlerts: [],
 

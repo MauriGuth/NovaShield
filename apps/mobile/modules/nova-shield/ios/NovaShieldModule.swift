@@ -140,6 +140,25 @@ public class NovaShieldModule: Module {
       ]
     }
 
+    /**
+     Bloqueos que registró la extensión del túnel.
+
+     En Android el módulo emite `onDomainBlocked` y la app lo escucha. En iOS
+     eso es imposible: la extensión es otro proceso y no puede mandarle eventos
+     al JS. La app tiene que venir a buscarlos acá, o el contador de bloqueos se
+     queda en cero aunque el escudo esté trabajando.
+     */
+    Function("getBlockedEvents") { () -> [String: Any] in
+      guard let defaults = UserDefaults(suiteName: Self.appGroup) else {
+        return ["count": 0, "recent": []]
+      }
+      let recent = defaults.array(forKey: "recentBlocked") as? [[String: Any]] ?? []
+      return [
+        "count": defaults.integer(forKey: "blockedCount"),
+        "recent": recent,
+      ]
+    }
+
     Function("getBlocklistDirectory") { () -> String in
       // La lista tiene que vivir en el App Group: es el único lugar que la
       // extensión de red puede leer.

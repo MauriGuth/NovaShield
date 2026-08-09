@@ -21,6 +21,7 @@ export function useShieldController() {
   const setShieldEnabled = useShieldStore((s) => s.setShieldEnabled);
   const recordBlockedDomain = useShieldStore((s) => s.recordBlockedDomain);
   const recordBlocklistSync = useShieldStore((s) => s.recordBlocklistSync);
+  const syncNativeBlocks = useShieldStore((s) => s.syncNativeBlocks);
 
   // Eventos del módulo nativo, más un refresco cada vez que la app vuelve al
   // frente: el usuario pudo haber apagado la VPN desde Ajustes mientras estaba
@@ -35,16 +36,31 @@ export function useShieldController() {
     const blockedSub = NovaShield.addListener('onDomainBlocked', (event) => {
       recordBlockedDomain(event.domain, event.at);
     });
+    // En iOS los bloqueos los cuenta la extensión, en otro proceso: no puede
+    // emitir `onDomainBlocked`, así que la app tiene que ir a buscarlos. Sin
+    // esto el contador quedaba en cero para siempre aunque el escudo estuviera
+    // bloqueando — el usuario no se enteraba nunca de que lo protegimos.
+    const pullNativeBlocks = () => {
+      const events = NovaShield?.getBlockedEvents?.();
+      if (events) syncNativeBlocks(events);
+    };
+    pullNativeBlocks();
+    const pull = setInterval(pullNativeBlocks, 5000);
+
     const appStateSub = AppState.addEventListener('change', (next) => {
-      if (next === 'active') setStatus(getShieldStatus());
+      if (next === 'active') {
+        setStatus(getShieldStatus());
+        pullNativeBlocks();
+      }
     });
 
     return () => {
+      clearInterval(pull);
       statusSub.remove();
       blockedSub.remove();
       appStateSub.remove();
     };
-  }, [recordBlockedDomain, setShieldEnabled]);
+  }, [recordBlockedDomain, setShieldEnabled, syncNativeBlocks]);
 
   const sync = useCallback(
     async (options: { force?: boolean } = {}) => {

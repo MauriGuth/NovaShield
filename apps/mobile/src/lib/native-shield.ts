@@ -57,6 +57,17 @@ export interface NovaShieldNative {
   getBlockedCount(): number;
 
   /**
+   * Bloqueos registrados por la extensión (solo iOS).
+   *
+   * En Android llegan por el evento `onDomainBlocked`; en iOS la extensión es
+   * otro proceso y no puede emitirlo, así que la app los va a buscar.
+   */
+  getBlockedEvents?(): {
+    count: number;
+    recent: { domain: string; at: number }[];
+  };
+
+  /**
    * Contadores del túnel (solo iOS por ahora). Números, nunca dominios.
    * Sirven para saber en qué punto se corta la cadena sin pedirle a nadie que
    * conecte el teléfono a una Mac y filtre logs.

@@ -70,6 +70,9 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
   private let pendingLock = NSLock()
   private static let pendingTimeout: TimeInterval = 4
 
+  /// Tope de bloqueos recientes guardados para que los muestre la app.
+  private static let maxRecentBlocked = 50
+
   override func startTunnel(
     options: [String: NSObject]?,
     completionHandler: @escaping (Error?) -> Void
@@ -278,11 +281,29 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
   // MARK: - Estado compartido con la app
 
+  /**
+   Deja el bloqueo en el App Group para que la app pueda mostrarlo.
+
+   La extensión corre en OTRO proceso: no puede emitir eventos al JS de la app
+   como hace el módulo en Android. Sin este buzón compartido, el contador de
+   bloqueos se quedaba en cero para siempre y el usuario no se enteraba nunca de
+   que el escudo lo había protegido — que es justamente la prueba de que sirve.
+
+   Se guarda una lista acotada de los últimos bloqueos. Esto sí incluye
+   dominios, pero no sale del teléfono: vive en el contenedor compartido de la
+   app, igual que las alertas del escáner.
+   */
   private func persistBlocked(domain: String) {
     guard let defaults = UserDefaults(suiteName: Self.appGroup) else { return }
     defaults.set(blockedCount, forKey: "blockedCount")
-    defaults.set(domain, forKey: "lastBlockedDomain")
-    defaults.set(Date().timeIntervalSince1970 * 1000, forKey: "lastBlockedAt")
+
+    let now = Date().timeIntervalSince1970 * 1000
+    var recent = defaults.array(forKey: "recentBlocked") as? [[String: Any]] ?? []
+    recent.insert(["domain": domain, "at": now], at: 0)
+    if recent.count > Self.maxRecentBlocked {
+      recent = Array(recent.prefix(Self.maxRecentBlocked))
+    }
+    defaults.set(recent, forKey: "recentBlocked")
   }
 
   private func updateStatus(_ status: String) {
