@@ -50,6 +50,9 @@ export default function ProteccionScreen() {
     NovaShield?.getShieldDiagnostics?.(),
   );
   const [bypassSuspected, setBypassSuspected] = useState(false);
+  const [messagesEnabled, setMessagesEnabled] = useState(
+    () => NovaShield?.isMessageProtectionEnabled() ?? false,
+  );
   const shieldIsActive = status === 'active';
 
   useEffect(() => {
@@ -67,6 +70,11 @@ export default function ProteccionScreen() {
           fresh?.available === false &&
           Date.now() - activeSince > 60_000,
       );
+      // La Protección de Mensajes se habilita en los Ajustes del sistema, o sea
+      // fuera de la app: si no se relee, el usuario vuelve de activarla y la
+      // tarjeta le sigue diciendo que falta hacerlo. En Android es una lectura
+      // en vivo de los ajustes; en iOS, la marca de que la extensión ya corrió.
+      setMessagesEnabled(NovaShield?.isMessageProtectionEnabled() ?? false);
     };
 
     // No se llama en el cuerpo del efecto para no escribir estado de forma
@@ -80,9 +88,6 @@ export default function ProteccionScreen() {
       sub.remove();
     };
   }, [shieldIsActive]);
-  const [messagesEnabled, setMessagesEnabled] = useState(
-    () => NovaShield?.isMessageProtectionEnabled() ?? false,
-  );
 
   const isActive = status === 'active';
 
@@ -205,17 +210,28 @@ export default function ProteccionScreen() {
                 </ThemedText>
                 <ThemedText type="small" themeColor="textSecondary">
                   Algo está resolviendo los dominios por fuera del escudo, así
-                  que no podemos bloquear nada. Casi siempre es la Retransmisión
-                  privada de iCloud. Para apagarla:
+                  que no podemos bloquear nada.{' '}
+                  {Platform.OS === 'ios'
+                    ? 'Casi siempre es la Retransmisión privada de iCloud. Para apagarla:'
+                    : 'Casi siempre es el DNS privado del sistema, que manda las consultas cifradas a otro servidor. Para corregirlo:'}
                 </ThemedText>
+                {/*
+                  El equivalente de la Retransmisión privada en Android es el
+                  "DNS privado" (DNS sobre TLS). Con un servidor fijo puesto a
+                  mano, las consultas salen por el 853 a una IP que el túnel no
+                  rutea, y el escudo queda mirando una interfaz vacía. En
+                  "Automático" no hay problema: el sistema intenta contra el DNS
+                  del túnel, no le responde por TLS y vuelve solo al 53.
+                */}
                 <ThemedText type="small">
-                  1. Ajustes → tocá tu nombre (arriba de todo){'\n'}
-                  2. iCloud → Retransmisión privada{'\n'}
-                  3. Apagala y volvé acá
+                  {Platform.OS === 'ios'
+                    ? '1. Ajustes → tocá tu nombre (arriba de todo)\n2. iCloud → Retransmisión privada\n3. Apagala y volvé acá'
+                    : '1. Ajustes → Red e internet → DNS privado\n2. Elegí "Automático" (o "Desactivado")\n3. Volvé acá'}
                 </ThemedText>
                 <ThemedText type="small" themeColor="textSecondary">
-                  Si no la tenés activada, revisá en Ajustes → General → VPN, DNS
-                  y dispositivos que no haya otro DNS configurado.
+                  {Platform.OS === 'ios'
+                    ? 'Si no la tenés activada, revisá en Ajustes → General → VPN, DNS y dispositivos que no haya otro DNS configurado.'
+                    : 'Si ya estaba en Automático, fijate que no haya otra VPN prendida: solo una puede tomar el túnel a la vez.'}
                 </ThemedText>
               </ThemedView>
             )}

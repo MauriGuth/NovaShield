@@ -63,10 +63,14 @@ export interface NovaShieldNative {
   requestNotificationPermission?(): Promise<boolean>;
 
   /**
-   * Bloqueos registrados por la extensión (solo iOS).
+   * Bloqueos registrados por el escudo, incluidos los de mientras la app
+   * estaba cerrada.
    *
-   * En Android llegan por el evento `onDomainBlocked`; en iOS la extensión es
-   * otro proceso y no puede emitirlo, así que la app los va a buscar.
+   * El evento `onDomainBlocked` solo llega con la app abierta, y el escudo
+   * trabaja sobre todo cuando no lo está: en iOS porque la extensión es otro
+   * proceso que no puede emitir eventos, y en Android porque no hay nadie
+   * escuchando. Las dos plataformas dejan los bloqueos guardados y la app los
+   * viene a buscar.
    */
   getBlockedEvents?(): {
     count: number;
@@ -74,9 +78,13 @@ export interface NovaShieldNative {
   };
 
   /**
-   * Contadores del túnel (solo iOS por ahora). Números, nunca dominios.
+   * Contadores del escudo. Números, nunca dominios.
    * Sirven para saber en qué punto se corta la cadena sin pedirle a nadie que
-   * conecte el teléfono a una Mac y filtre logs.
+   * conecte el teléfono a una computadora y filtre logs.
+   *
+   * `lastError` (Android) es el motivo por el que el servicio no arrancó:
+   * `start()` vuelve apenas se lo pide al sistema, así que lo que falle dentro
+   * del servicio no puede volver por esa promesa.
    */
   getShieldDiagnostics?(): {
     available: boolean;
@@ -85,6 +93,7 @@ export interface NovaShieldNative {
     blocked?: number;
     listCount?: number;
     at?: number;
+    lastError?: string | null;
   };
 
   // — Escáner del Dispositivo —

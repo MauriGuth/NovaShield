@@ -1,12 +1,15 @@
 package ar.com.novasolutions.novashield
 
+import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.VpnService
+import android.os.Build
 import android.provider.Settings
 import androidx.core.content.ContextCompat
 import androidx.core.os.bundleOf
+import expo.modules.interfaces.permissions.PermissionsStatus
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.activityresult.AppContextActivityResultContract
 import expo.modules.kotlin.activityresult.AppContextActivityResultLauncher
@@ -120,7 +123,50 @@ class NovaShieldModule : Module(), ShieldBus.Listener {
 
     Function("getLoadedDomainCount") { Blocklist.domainCount }
 
-    Function("getBlockedCount") { ShieldBus.blockedCount }
+    Function("getBlockedCount") { ShieldBus.blockedCount(context) }
+
+    /**
+     * Bloqueos guardados por los servicios.
+     *
+     * El evento `onDomainBlocked` solo llega si la app está abierta, y el
+     * escudo trabaja sobre todo cuando NO lo está. Sin este repaso, todo lo que
+     * frenamos con la app cerrada se perdía y el contador arrancaba de cero.
+     */
+    Function("getBlockedEvents") { ShieldBus.blockedEvents(context) }
+
+    /**
+     * Contadores del túnel: paquetes vistos, consultas parseadas, bloqueos y
+     * tamaño de la lista. Solo números, ningún dominio.
+     */
+    Function("getShieldDiagnostics") { ShieldBus.diagnostics(context) }
+
+    /**
+     * Permiso de notificaciones (Android 13+).
+     *
+     * Sin este permiso el sistema descarta en silencio TODOS los avisos de la
+     * app: el del bloqueo y hasta el permanente del servicio. El escudo seguiría
+     * bloqueando, pero cada bloqueo se vería igual que quedarse sin internet.
+     */
+    AsyncFunction("requestNotificationPermission") { promise: Promise ->
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        // Antes de Android 13 el permiso se otorga al instalar.
+        promise.resolve(true)
+        return@AsyncFunction
+      }
+      val permissions = appContext.permissions
+      if (permissions == null) {
+        promise.resolve(false)
+        return@AsyncFunction
+      }
+      permissions.askForPermissions(
+        { result ->
+          promise.resolve(
+            result[Manifest.permission.POST_NOTIFICATIONS]?.status == PermissionsStatus.GRANTED,
+          )
+        },
+        Manifest.permission.POST_NOTIFICATIONS,
+      )
+    }.runOnQueue(Queues.MAIN)
 
     // — Escáner del Dispositivo —
 

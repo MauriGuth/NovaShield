@@ -13,6 +13,7 @@ import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.DatagramPacket
@@ -53,6 +54,17 @@ class DnsShieldVpnService : VpnService() {
     private const val CHANNEL_ID = "nova_shield_escudo"
     private const val NOTIFICATION_ID = 1001
 
+    /** Canal aparte para los avisos de bloqueo: estos SÍ tienen que verse. */
+    private const val BLOCK_CHANNEL_ID = "nova_shield_bloqueos"
+
+    /**
+     * Límites del aviso de bloqueo. Una sola carga de página dispara decenas de
+     * consultas al mismo dominio: sin esto el teléfono vibraría en loop y la
+     * persona apagaría el escudo, que es exactamente lo que queremos evitar.
+     */
+    private const val NOTIFY_MIN_GAP_MS = 30_000L
+    private const val NOTIFY_PER_DOMAIN_GAP_MS = 600_000L
+
     /**
      * Prefijos de documentación (RFC 5737): direcciones que por definición no
      * existen en ninguna red real, así que no pueden chocar con la del usuario.
@@ -81,6 +93,17 @@ class DnsShieldVpnService : VpnService() {
   private var upstreamServers: List<InetAddress> = emptyList()
   private val writeLock = Any()
 
+  // Contadores de diagnóstico. Sobreviven a rebuildTunnel() a propósito: el
+  // usuario no distingue "cambió de WiFi" de "se rompió", y reiniciarlos en
+  // cada cambio de red haría ilegible el diagnóstico.
+  private var packetsSeen = 0
+  private var queriesParsed = 0
+  private var blockedInSession = 0
+
+  /** Throttling del aviso de bloqueo, en memoria del servicio. */
+  private var lastNotifyAt = 0L
+  private val notifiedDomains = HashMap<String, Long>()
+
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     when (intent?.action) {
       ACTION_STOP -> {
@@ -99,7 +122,17 @@ class DnsShieldVpnService : VpnService() {
   private fun startShield() {
     if (running.get()) return
 
-    startForeground(NOTIFICATION_ID, buildNotification())
+    // Android 14 valida el foregroundServiceType contra la categoría de la app
+    // y rechaza el arranque con una excepción. Si eso pasa hay que decirlo, no
+    // morir con un stack trace que solo se ve con el teléfono conectado a una
+    // computadora.
+    try {
+      startForeground(NOTIFICATION_ID, buildNotification())
+    } catch (err: Exception) {
+      Log.e(TAG, "El sistema rechazó el servicio en primer plano", err)
+      fail("El sistema no dejó arrancar el servicio del escudo (${err.javaClass.simpleName}).")
+      return
+    }
 
     // El proceso pudo haber muerto y revivido con el object Blocklist en cero
     // (el reinicio sticky no pasa por JS ni por NovaShieldModule.start). Sin
@@ -107,9 +140,7 @@ class DnsShieldVpnService : VpnService() {
     // todo es peor que un escudo caído y visible.
     if (!Blocklist.ensureLoaded(this)) {
       Log.e(TAG, "Sin lista de bloqueo utilizable: el escudo no arranca")
-      ShieldBus.publishStatus("inactive")
-      stopForegroundCompat()
-      stopSelf()
+      fail("La lista de bloqueo no se pudo cargar. Probá sincronizarla de nuevo.")
       return
     }
 
@@ -128,8 +159,7 @@ class DnsShieldVpnService : VpnService() {
     }
     if (prefix == null) {
       Log.e(TAG, "No se pudo asignar una dirección al túnel")
-      ShieldBus.publishStatus("inactive")
-      stopSelf()
+      fail("No pudimos armar la interfaz del escudo en esta red.")
       return
     }
 
@@ -154,7 +184,12 @@ class DnsShieldVpnService : VpnService() {
 
     if (descriptor == null) {
       Log.e(TAG, "establish() devolvió null: falta consentimiento o hay otra VPN activa")
+      ShieldBus.publishError(
+        this,
+        "Otra VPN está activa o falta el permiso. Desactivá la otra VPN e intentá de nuevo.",
+      )
       ShieldBus.publishStatus("preempted")
+      stopForegroundCompat()
       stopSelf()
       return
     }
@@ -162,12 +197,39 @@ class DnsShieldVpnService : VpnService() {
     tunnel = descriptor
     running.set(true)
     isRunning = true
-    ShieldBus.resetCount()
+    ShieldBus.clearError(this)
     ShieldBus.publishStatus("active")
+    publishDiagnostics()
 
     forwarders = Executors.newFixedThreadPool(FORWARD_THREADS)
     worker = thread(name = "nova-shield-dns", isDaemon = true) { pumpPackets(descriptor) }
     watchNetworkChanges()
+  }
+
+  /**
+   * Se rinde dejando el motivo escrito donde la app lo puede leer.
+   *
+   * `start()` en el módulo devuelve apenas le pide al sistema que levante el
+   * servicio, así que nada de lo que falle acá adentro puede volver por esa
+   * promesa. Sin dejar el motivo, activar el escudo y que no arranque se ve
+   * igual que activarlo y que funcione.
+   */
+  private fun fail(reason: String) {
+    ShieldBus.publishError(this, reason)
+    ShieldBus.publishStatus("inactive")
+    stopForegroundCompat()
+    stopSelf()
+  }
+
+  /** Foto de los contadores para que la app la muestre. Solo números. */
+  private fun publishDiagnostics() {
+    ShieldBus.publishDiagnostics(
+      this,
+      packetsSeen,
+      queriesParsed,
+      blockedInSession,
+      Blocklist.domainCount,
+    )
   }
 
   /** DNS configurados en la red activa. Si no hay ninguno, se usa el fallback. */
@@ -249,6 +311,13 @@ class DnsShieldVpnService : VpnService() {
         }
         if (length <= 0) continue
 
+        packetsSeen++
+        // Cada 10 paquetes, una foto del estado. Sin esto, diagnosticar el
+        // escudo exige conectar el teléfono a una computadora y filtrar logcat;
+        // con estos números se ve desde la app si el DNS no entra al túnel, si
+        // entra y no se parsea, o si se parsea y no matchea.
+        if (packetsSeen % 10 == 1) publishDiagnostics()
+
         // parseQuery copia lo que necesita: el buffer se reutiliza enseguida.
         val query = DnsPacket.parseQuery(buffer, length)
         if (query == null) {
@@ -259,8 +328,12 @@ class DnsShieldVpnService : VpnService() {
           continue
         }
 
+        queriesParsed++
+
         if (Blocklist.isBlocked(query.domain)) {
-          ShieldBus.publishBlocked(query.domain)
+          blockedInSession++
+          ShieldBus.publishBlocked(this, query.domain)
+          notifyBlocked(query.domain)
           writePacket(output, DnsPacket.buildNxDomainResponse(query))
           continue
         }
@@ -398,12 +471,79 @@ class DnsShieldVpnService : VpnService() {
       )
     }
 
-    return Notification.Builder(this, CHANNEL_ID)
+    // NotificationCompat y no Notification.Builder: el constructor con canal
+    // recién existe en API 26 y la app soporta desde la 24.
+    return NotificationCompat.Builder(this, CHANNEL_ID)
       .setContentTitle("Nova Shield te está protegiendo")
       .setContentText("Bloqueando sitios de estafa conocidos")
       .setSmallIcon(android.R.drawable.ic_lock_lock)
+      .setPriority(NotificationCompat.PRIORITY_LOW)
       .setOngoing(true)
       .apply { openApp?.let { setContentIntent(it) } }
       .build()
+  }
+
+  /**
+   * Avisa que bloqueamos un sitio.
+   *
+   * Sin esto, bloquear se ve EXACTAMENTE igual que quedarse sin internet: el
+   * navegador dice "no se puede conectar" y la persona concluye que la app le
+   * rompió la conexión. Es el peor resultado posible —el momento en que el
+   * producto más sirve se lee como una falla— y termina con el escudo apagado.
+   * Pasó tal cual en iOS antes de agregar el aviso.
+   */
+  private fun notifyBlocked(domain: String) {
+    val now = System.currentTimeMillis()
+    if (now - lastNotifyAt < NOTIFY_MIN_GAP_MS) return
+
+    val lastForDomain = notifiedDomains[domain]
+    if (lastForDomain != null && now - lastForDomain < NOTIFY_PER_DOMAIN_GAP_MS) return
+
+    // Purga para que el mapa no crezca solo mientras el servicio vive.
+    notifiedDomains.entries.removeAll { now - it.value >= NOTIFY_PER_DOMAIN_GAP_MS }
+    notifiedDomains[domain] = now
+    lastNotifyAt = now
+
+    val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      manager.createNotificationChannel(
+        NotificationChannel(
+          BLOCK_CHANNEL_ID,
+          "Sitios bloqueados",
+          // HIGH: es la explicación de por qué la página no cargó. Si llega
+          // callada, el usuario igual concluye que se quedó sin internet.
+          NotificationManager.IMPORTANCE_HIGH,
+        ).apply {
+          description = "Aviso cuando el escudo frena un sitio de estafa."
+        },
+      )
+    }
+
+    val openApp = packageManager.getLaunchIntentForPackage(packageName)?.let {
+      PendingIntent.getActivity(
+        this,
+        1,
+        it,
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+      )
+    }
+
+    val notification = NotificationCompat.Builder(this, BLOCK_CHANNEL_ID)
+      .setContentTitle("Bloqueamos un sitio peligroso")
+      .setContentText("No dejamos que se abra $domain.")
+      .setStyle(
+        NotificationCompat.BigTextStyle().bigText(
+          "No dejamos que se abra $domain: figura en las bases de sitios de " +
+            "estafa. Si llegaste por un mensaje, no respondas y borralo.",
+        ),
+      )
+      .setSmallIcon(android.R.drawable.stat_sys_warning)
+      .setPriority(NotificationCompat.PRIORITY_HIGH)
+      .setAutoCancel(true)
+      .apply { openApp?.let { setContentIntent(it) } }
+      .build()
+
+    manager.notify(domain.hashCode(), notification)
   }
 }

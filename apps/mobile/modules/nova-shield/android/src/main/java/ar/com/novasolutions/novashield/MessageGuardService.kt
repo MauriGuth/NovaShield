@@ -89,7 +89,7 @@ class MessageGuardService : NotificationListenerService() {
       val blockedDomain = findBlockedDomain(text) ?: return@launch
       Log.i(TAG, "Mensaje con dominio bloqueado: $blockedDomain")
       warnUser(blockedDomain)
-      ShieldBus.publishBlocked(blockedDomain)
+      ShieldBus.publishBlocked(applicationContext, blockedDomain)
     }
   }
 
@@ -157,11 +157,13 @@ class MessageGuardService : NotificationListenerService() {
       )
     }
 
-    val notification = Notification.Builder(this, CHANNEL_ID)
+    // NotificationCompat y no Notification.Builder: el constructor con canal
+    // recién existe en API 26 y la app soporta desde la 24.
+    val notification = NotificationCompat.Builder(this, CHANNEL_ID)
       .setContentTitle("Cuidado: mensaje con enlace peligroso")
       .setContentText("El enlace a $domain está reportado como estafa. No lo abras.")
       .setStyle(
-        Notification.BigTextStyle().bigText(
+        NotificationCompat.BigTextStyle().bigText(
           "Te llegó un mensaje con un enlace a $domain, que figura en las bases " +
             "de sitios de estafa. No lo abras ni cargues datos ahí. Si el mensaje " +
             "venía de un contacto conocido, avisale: puede que le hayan robado la cuenta.",

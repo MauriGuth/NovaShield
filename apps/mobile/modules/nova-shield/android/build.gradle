@@ -19,6 +19,13 @@ android {
 
 dependencies {
   implementation "androidx.core:core-ktx:1.17.0"
+  // `AppContextActivityResultLauncher.launch` recibe un ActivityResultCallback,
+  // que vive acá. expo-modules-core lo usa en su API pública pero lo declara
+  // como `implementation`, así que NO llega transitivamente: sin esta línea el
+  // diálogo de consentimiento de VPN no compila ("Cannot access class
+  // 'ActivityResultCallback'"). La versión es la que ya resuelve appcompat en
+  // esta app; si algo pide una más nueva, Gradle la sube solo.
+  implementation "androidx.activity:activity:1.7.0"
   implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2"
   implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2"
   // BiometricManager.canAuthenticate distingue "hay sensor" de "hay biometría

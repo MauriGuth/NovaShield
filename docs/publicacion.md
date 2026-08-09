@@ -95,7 +95,37 @@ Mientras el backend siga solo en tu Mac, la app en la calle no va a poder analiz
 | Modo Familia | Sí, si el backend es alcanzable |
 | Comprar una suscripción | No hasta configurar RevenueCat + productos en App Store Connect |
 
-**Advertencia honesta**: el código nativo de las fases 2 y 3 nunca corrió en hardware. Este primer build es justamente para descubrir qué se rompe. Es normal que el primer intento falle en la firma de los targets; si pasa, mandame el log de EAS.
+Validado en un iPhone real el 08-08-2026: el escudo bloquea, avisa y el contador sube. Los cuatro bugs que aparecieron en ese primer intento están documentados en [`decisiones-tecnicas.md`](decisiones-tecnicas.md) y cubiertos con tests.
+
+---
+
+## Parte 1 bis · Instalar la app en un Android
+
+Más simple que iOS: no hay perfiles de aprovisionamiento ni registro de dispositivos. EAS genera un keystore la primera vez y lo guarda; después el APK se instala directo.
+
+```bash
+cd ~/Documents/NovaShield/apps/mobile
+eas build --platform android --profile preview
+```
+
+Cuando pregunte por el keystore, aceptá que lo genere EAS (`Generate new keystore`). Al terminar te da un QR y un link: abrilo **desde el teléfono**, bajá el `.apk` y tocalo para instalar. Android va a pedir permiso para instalar apps de esa fuente (Chrome, normalmente): aceptá y volvé a tocar el archivo.
+
+El perfil `preview` ya apunta al backend de Railway y trae `EXPO_PUBLIC_UNLOCK_ALL=1`, así que todas las funciones están habilitadas para probar.
+
+### Qué hay que habilitar a mano en el teléfono
+
+1. **Escudo DNS** — al activarlo, Android muestra el diálogo de "solicitud de conexión". Aceptar. Aparece una llave arriba en la barra de estado: es la marca del sistema de que hay una VPN activa, no un problema.
+2. **Notificaciones** (Android 13+) — la app las pide junto con el escudo. Si las rechazás, el escudo sigue bloqueando pero cada bloqueo se ve igual que quedarse sin internet.
+3. **Protección de Mensajes** — Ajustes → Apps → Acceso especial → Acceso a notificaciones → Nova Shield. El botón "Activar" de la app te lleva ahí.
+4. **DNS privado** — si lo tenés con un servidor fijo (Ajustes → Red e internet → DNS privado), el escudo no ve nada: las consultas salen cifradas a ese servidor. Ponelo en "Automático". La app detecta este caso y te lo dice.
+
+### Cómo probar que bloquea
+
+Con el escudo activo, abrí en el navegador un dominio de la lista (`login.002307.com` sirvió en iOS). Tiene que: no cargar, llegarte una notificación que nombra el sitio, y subir el contador de "amenazas frenadas" en la pantalla de Protección.
+
+Si no bloquea, mirá la línea de **Diagnóstico** abajo del escudo (aparece porque el build es de prueba): `paquetes` en 0 significa que el DNS no está entrando al túnel; `consultas` en 0 con paquetes > 0, que entra pero no se parsea; `bloqueos` en 0 con consultas > 0, que el dominio no está en la lista o la canonicalización difiere.
+
+**Advertencia honesta**: el `VpnService` y el `NotificationListenerService` nunca corrieron en un teléfono. El código compila (se verificó con el SDK de Android y Gradle, ver `decisiones-tecnicas.md`), pero eso no dice nada del comportamiento. Este build es para descubrir qué se rompe.
 
 ---
 

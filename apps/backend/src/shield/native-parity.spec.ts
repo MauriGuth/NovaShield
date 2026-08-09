@@ -112,3 +112,55 @@ describe('ShieldBlocklist.swift · las dos copias son idénticas', () => {
     }
   });
 });
+
+const ANDROID_MODULE = 'apps/mobile/modules/nova-shield/android';
+
+describe('módulo Android · trampas que solo aparecen al compilar', () => {
+  it('declara androidx.activity, que expo-modules-core NO expone', () => {
+    // `AppContextActivityResultLauncher.launch` recibe un
+    // `androidx.activity.result.ActivityResultCallback`, pero expo-modules-core
+    // declara esa librería como `implementation`: no llega transitivamente.
+    // Sin la dependencia explícita, el diálogo de consentimiento de VPN no
+    // compila ("Cannot access class 'ActivityResultCallback'") y el build de
+    // EAS muere después de veinte minutos.
+    const gradle = readFileSync(
+      join(REPO_ROOT, ANDROID_MODULE, 'build.gradle'),
+      'utf8',
+    );
+    expect(gradle).toMatch(/androidx\.activity:activity/);
+  });
+
+  it('no usa Notification.Builder con canal (existe recién en API 26 y minSdk es 24)', () => {
+    // `Notification.Builder(Context, String)` se agregó en Android 8. En un
+    // teléfono con Android 7 —que son justo los que más nos importan, gente con
+    // equipos viejos— la llamada revienta con NoSuchMethodError al activar el
+    // escudo o al avisar de un mensaje peligroso. NotificationCompat hace lo
+    // mismo y funciona en las dos.
+    const sources = readdirSync(
+      join(REPO_ROOT, ANDROID_MODULE, 'src/main/java/ar/com/novasolutions/novashield'),
+    ).filter((f) => f.endsWith('.kt'));
+
+    for (const file of sources) {
+      const source = readFileSync(
+        join(REPO_ROOT, ANDROID_MODULE, 'src/main/java/ar/com/novasolutions/novashield', file),
+        'utf8',
+      );
+      expect(source).not.toMatch(/[^t]Notification\.Builder\(/);
+    }
+  });
+
+  it('el perfil de EAS para probar en un teléfono produce un APK, no un AAB', () => {
+    // Un .aab no se instala en un teléfono: es el formato que se sube a Play.
+    // Sin esto, el build "sale bien" y el archivo no sirve para nada.
+    const eas = JSON.parse(
+      readFileSync(join(REPO_ROOT, 'apps/mobile/eas.json'), 'utf8'),
+    ) as {
+      build: Record<string, { distribution?: string; android?: { buildType?: string } }>;
+    };
+
+    for (const [name, profile] of Object.entries(eas.build)) {
+      if (profile.distribution !== 'internal') continue;
+      expect([name, profile.android?.buildType]).toEqual([name, 'apk']);
+    }
+  });
+});

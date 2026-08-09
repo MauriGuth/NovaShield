@@ -177,6 +177,28 @@ Y dos defectos de producto que el hardware hizo evidentes:
 - **Los fallos del escudo eran invisibles**: `enable()` no tenía `catch`, así que el switch volvía a apagado sin explicar nada. En una app de seguridad esa ambigüedad —¿está roto o quedó apagado?— es inaceptable.
 - **Bloquear se veía igual que quedarse sin internet**: el navegador mostraba "no se puede conectar" y la conclusión natural era que la app rompió la conexión. Se resolvió con una notificación local que nombra el sitio y explica por qué no se abrió.
 
+## Preparación de Android (09-08-2026) — lo que encontró el primer compilado
+
+El código nativo de Android nunca se había compilado. Compilarlo de verdad (SDK + Gradle, `:nova-shield:compileReleaseKotlin` y el merge del manifest) encontró tres cosas antes de gastar un build de EAS:
+
+1. **Faltaba `androidx.activity`.** `AppContextActivityResultLauncher.launch` recibe un `ActivityResultCallback`, pero expo-modules-core declara esa librería como `implementation`: no llega transitivamente. Sin la dependencia explícita, el diálogo de consentimiento de VPN no compila. Es el equivalente Android del podspec sin nombre propio: invisible en la lectura, fatal al compilar.
+2. **`Notification.Builder(Context, String)` existe recién en API 26 y el `minSdk` efectivo es 24.** En un teléfono con Android 7 —justo los equipos viejos que más nos importan— activar el escudo reventaba con `NoSuchMethodError`. Se pasó todo a `NotificationCompat`.
+3. **El perfil de EAS no pedía APK.** Un `.aab` no se instala en un teléfono: el build habría "salido bien" y el archivo no habría servido para probar nada.
+
+Los tres quedaron con test de regresión en `native-parity.spec.ts`.
+
+Además se llevó Android a la misma altura que iOS en las dos cosas que el hardware había enseñado allá:
+
+- **Notificación al bloquear**, con el mismo throttling (30 s entre avisos, 10 min por dominio). Sin esto, bloquear se ve igual que quedarse sin internet.
+- **Los fallos dejan de ser invisibles.** `start()` vuelve apenas el sistema acepta levantar el `Service`, así que nada de lo que falle adentro puede volver por esa promesa: el servicio escribe el motivo en `SharedPreferences` y la app lo lee y lo muestra. Es el mismo agujero que en iOS dejaba el switch volviendo solo a apagado sin decir nada.
+
+Y dos correcciones propias de la plataforma:
+
+- **El contador de bloqueos se reiniciaba al cambiar de red.** `rebuildTunnel()` (WiFi → 4G) pasaba por `startShield()`, que llamaba `resetCount()`. Ahora el total se persiste, igual que en el App Group de iOS, y `getBlockedEvents()` deja que la app recupere lo que pasó mientras estaba cerrada — que es la mayor parte del tiempo.
+- **El aviso de "algo esquiva el escudo" daba instrucciones de iCloud.** En Android el equivalente es el **DNS privado** (DNS sobre TLS) con un servidor fijo: las consultas salen por el 853 a una IP que el túnel no rutea. En modo "Automático" no hay problema —el sistema prueba contra el DNS del túnel, no le responde por TLS y vuelve solo al 53—, pero con un host fijo el escudo queda mirando una interfaz vacía.
+
+Lo que el compilado local NO cubre y solo dirá el teléfono: si Android 14 acepta `foregroundServiceType="systemExempted"` para esta app, si `establish()` levanta el túnel con los alias por DNS, si el `NotificationListenerService` recibe el contenido de WhatsApp, y si el consumo de batería del pool de reenvío es aceptable.
+
 ## Riesgos activos
 
 1. Cuenta Apple individual no puede publicar el escudo DNS → enrolar Organization ya.
@@ -184,7 +206,7 @@ Y dos defectos de producto que el hardware hizo evidentes:
 3. Regresiones de iOS en Message Filter (reportes activos en iOS 26) → QA por versión en dispositivos reales.
 4. Costo variable de Web Risk al escalar → deduplicación y caché desde el día 1 (ya implementado).
 5. Dependencia de mantenedores individuales (`expo-share-intent`, `expo-apple-targets`) → versiones pinneadas, plan B de config plugins propios.
-6. **Android sigue sin correr en hardware.** iOS ya está validado en un iPhone real (ver abajo), pero el `VpnService` y el `NotificationListenerService` nunca se ejecutaron: son la mitad del código nativo del producto y su primer arranque va a encontrar problemas propios, distintos de los de iOS.
+6. **Android sigue sin correr en hardware.** iOS ya está validado en un iPhone real (ver arriba) y el código de Android ya compila y quedó a la par en notificaciones y errores visibles, pero el `VpnService` y el `NotificationListenerService` nunca se ejecutaron. Compilar descarta los errores de compilación, no los de comportamiento: el primer arranque en un teléfono va a encontrar problemas propios.
 7. La sincronización semanal baja la lista completa (1,3 MB). Con más usuarios hay que implementar deltas o el costo de egress crece linealmente.
 8. **Clasificación del Modo Familia en Play**: la política no se pronuncia sobre nuestro caso exacto (compartir el estado propio entre adultos con consentimiento). El diseño está construido para quedar fuera de la definición de monitoring app, pero la decisión final es del revisor → tener listo el video demo mostrando el flujo de unión voluntaria y la simetría.
 9. **El esquema de la base se crea con `synchronize`**, apagado por defecto en PostgreSQL (`FAMILY_DB_SYNC=1` para el primer deploy). Antes de tener datos de usuarios reales hay que pasar a migraciones de TypeORM.

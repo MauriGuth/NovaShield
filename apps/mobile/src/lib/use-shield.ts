@@ -32,6 +32,10 @@ export function useShieldController() {
     const statusSub = NovaShield.addListener('onStatusChange', (event) => {
       setStatus(event.status);
       setShieldEnabled(event.status === 'active');
+      // Si terminó activándose, cualquier error que hayamos mostrado quedó
+      // viejo: el escudo tarda en confirmar y no queremos dejar en pantalla un
+      // "no pudimos activarlo" al lado de un escudo que está funcionando.
+      if (event.status === 'active') setError(null);
     });
     const blockedSub = NovaShield.addListener('onDomainBlocked', (event) => {
       recordBlockedDomain(event.domain, event.at);
@@ -116,8 +120,25 @@ export function useShieldController() {
         return;
       }
       await NovaShield.start();
-      setStatus(NovaShield.getStatus());
-      setShieldEnabled(true);
+
+      // `start()` vuelve apenas el sistema acepta la orden; el escudo confirma
+      // después (en Android el servicio recién arranca, en iOS el túnel pasa
+      // por "conectando"). Sin esperar la confirmación, el switch volvía solo a
+      // apagado y volvía a prenderse un segundo más tarde.
+      const confirmed = await waitForActive();
+      setStatus(confirmed);
+      setShieldEnabled(confirmed === 'active');
+
+      if (confirmed !== 'active') {
+        // El servicio deja escrito el motivo donde la app lo puede leer: es la
+        // única vía, porque nada de lo que falle dentro del servicio puede
+        // volver por la promesa de start().
+        const reason = NovaShield.getShieldDiagnostics?.()?.lastError;
+        setError(
+          reason ??
+            'El escudo no llegó a activarse. Fijate que no haya otra VPN prendida y probá de nuevo.',
+        );
+      }
     } catch (err) {
       // Sin este catch el error se perdía: el switch volvía solo a apagado y no
       // aparecía NADA en pantalla. En una app de seguridad eso es lo peor que
@@ -147,6 +168,24 @@ export function useShieldController() {
   }, [busy, setShieldEnabled]);
 
   return { status, busy, lastSync, error, enable, disable, sync };
+}
+
+/**
+ * Espera a que el escudo confirme que está activo, hasta 6 segundos.
+ *
+ * Devuelve el último estado leído, activo o no: quien llama decide qué hacer
+ * con un "no". No se usa un timeout más corto porque el primer arranque —el que
+ * levanta el proceso de la extensión en iOS o el servicio en Android— es
+ * siempre el más lento, y avisar de una falla que no ocurrió es tan malo como
+ * callar una que sí.
+ */
+async function waitForActive(): Promise<ShieldStatus> {
+  for (let intento = 0; intento < 30; intento++) {
+    const current = getShieldStatus();
+    if (current === 'active') return current;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  return getShieldStatus();
 }
 
 /** Texto de estado listo para mostrar, por plataforma y situación. */

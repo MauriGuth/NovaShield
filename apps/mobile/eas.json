@@ -11,6 +11,9 @@
       "ios": {
         "resourceClass": "m-medium"
       },
+      "android": {
+        "buildType": "apk"
+      },
       "env": {
         "EXPO_PUBLIC_API_URL": "http://localhost:3000"
       }
@@ -19,6 +22,9 @@
       "distribution": "internal",
       "ios": {
         "simulator": false
+      },
+      "android": {
+        "buildType": "apk"
       },
       "channel": "preview",
       "env": {
