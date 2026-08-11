@@ -1,5 +1,6 @@
 import {
   extractUrl,
+  extractUrls,
   normalizeForLookup,
   parentDomains,
 } from './url-utils';
@@ -30,6 +31,34 @@ describe('extractUrl', () => {
 
   it('rechaza esquemas que no sean http/https', () => {
     expect(extractUrl('javascript:alert(1)')).toBeNull();
+  });
+
+  it('extrae dominios lookalike con letras unicode (los pasa a punycode)', () => {
+    // La ı turca imita a la i: el lookalike clásico de mercadolibre. Con la
+    // clase ASCII vieja, este dominio pegado sin esquema devolvía null.
+    const url = extractUrl('mercadolıbre.com.ar');
+    expect(url?.hostname).toBe('xn--mercadolbre-6zb.com.ar');
+  });
+
+  it('no confunde dos palabras pegadas por un punto con un dominio', () => {
+    // La última etiqueta (el TLD) tiene que ser ASCII: "Traé" no lo es.
+    expect(extractUrl('nos vemos mañana.Traé el mate')).toBeNull();
+  });
+});
+
+describe('extractUrls (mensajes con varios links)', () => {
+  it('extrae el lookalike unicode dentro de un mensaje', () => {
+    const urls = extractUrls(
+      'Tu cuenta fue suspendida, entrá a mercadolıbre.com.ar y validá',
+    );
+    expect(urls.map((u) => u.hostname)).toContain(
+      'xn--mercadolbre-6zb.com.ar',
+    );
+  });
+
+  it('con URL completa presente, no duplica con dominios pelados', () => {
+    const urls = extractUrls('https://ejemplo.com y también ejemplo.com');
+    expect(urls).toHaveLength(1);
   });
 });
 

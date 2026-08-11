@@ -42,6 +42,10 @@ export class MessagesService {
   async analyze(input: AnalyzeMessageRequest): Promise<AnalyzeMessageResponse> {
     const startedAt = Date.now();
     const reasons: AnalysisReason[] = [];
+    // Mismo contrato que /v1/analyze: `false` apaga las capas pagas (Web Risk
+    // en los links + IA), nunca las locales. El plan gratuito pasado su tope
+    // sigue recibiendo veredicto por listas, heurísticas y patrones.
+    const deepAnalysis = input.deepAnalysis !== false;
 
     // Señal 1 · enlaces del mensaje. El tope de análisis completo NO puede ser
     // "los primeros 3 que aparecen": el atacante controla el orden y evadiría
@@ -61,7 +65,7 @@ export class MessagesService {
 
     const linkResults = await Promise.all(
       urls.map((url) =>
-        this.analysis.analyze(url.href).catch(() => null),
+        this.analysis.analyze(url.href, { deepAnalysis }).catch(() => null),
       ),
     );
     const analyzed = linkResults.filter((r) => r !== null);
@@ -89,6 +93,7 @@ export class MessagesService {
 
     // Señal 3 · intención según el modelo, solo en la franja ambigua.
     if (
+      deepAnalysis &&
       this.llm.isEnabled &&
       score < RISK_THRESHOLDS.malicious &&
       score >= LLM_MIN_SCORE

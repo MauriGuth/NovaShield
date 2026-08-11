@@ -71,6 +71,8 @@ La canonicalización de dominios (`packages/shared/src/domain.ts`) está espejad
 
 `POST /v1/messages/analyze` recibe `{ "text": "...", "source": "sms|notification|manual" }` y cruza tres señales: los enlaces del mensaje (máximo 3, con el motor de análisis completo), patrones de estafa argentinos (pedido del código de WhatsApp, cuento del familiar con número nuevo, CBU, ARCA, paquete en aduana, corte de servicio…) y, en la franja ambigua, clasificación con Claude.
 
+El escáner de la app usa este endpoint automáticamente: si lo pegado es un link suelto va a `/v1/analyze`, y cualquier otra cosa —un mensaje completo, con o sin links— viene acá (`scanInputKind` en `packages/shared`). El sesgo es deliberado hacia "mensaje": clasificar mal un link como mensaje solo cambia la tarjeta; clasificar un mensaje como link perdería los patrones de estafa.
+
 En el dispositivo:
 
 - **Android** — `NotificationListenerService` lee las notificaciones de mensajería y contrasta los dominios contra la **misma lista local** del escudo: el contenido de las notificaciones no sale del teléfono. El análisis profundo corre solo si el usuario abre la app y lo pide.

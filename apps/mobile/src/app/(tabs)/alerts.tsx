@@ -9,7 +9,19 @@ import { StoredAlert, useShield } from '@/lib/store';
 import { VERDICT_UI } from '@/lib/verdict-ui';
 
 export default function AlertsScreen() {
-  const alerts = useShield((s) => s.alerts);
+  const linkAlerts = useShield((s) => s.alerts);
+  const messageAlerts = useShield((s) => s.messageAlerts);
+
+  // Una sola línea de tiempo: las alertas de mensajes se guardaban en el store
+  // pero ninguna pantalla las mostraba — un análisis que asustó al usuario
+  // desaparecía de la app al salir del escáner. `kind` decide el descarte
+  // (cada lista tiene el suyo) y la etiqueta de la tarjeta.
+  const alerts = [
+    ...linkAlerts.map((a) => ({ ...a, kind: 'link' as const })),
+    ...messageAlerts.map((a) => ({ ...a, kind: 'message' as const })),
+  ].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
 
   return (
     <ThemedView style={styles.root}>
@@ -44,9 +56,15 @@ export default function AlertsScreen() {
   );
 }
 
-function AlertCard({ alert }: { alert: StoredAlert }) {
+function AlertCard({
+  alert,
+}: {
+  alert: StoredAlert & { kind: 'link' | 'message' };
+}) {
   const theme = useTheme();
   const dismissAlert = useShield((s) => s.dismissAlert);
+  const dismissMessageAlert = useShield((s) => s.dismissMessageAlert);
+  const dismiss = alert.kind === 'message' ? dismissMessageAlert : dismissAlert;
   const ui = VERDICT_UI[alert.verdict];
   const date = new Date(alert.createdAt);
 
@@ -69,8 +87,13 @@ function AlertCard({ alert }: { alert: StoredAlert }) {
       </View>
 
       <ThemedText type="smallBold" numberOfLines={1}>
-        {alert.domain}
+        {alert.kind === 'message'
+          ? alert.domain
+            ? `Mensaje · ${alert.domain}`
+            : 'Mensaje analizado'
+          : alert.domain}
       </ThemedText>
+      {/* En un mensaje, `url` es el texto que se analizó (recortado). */}
       <ThemedText type="small" themeColor="textSecondary" numberOfLines={2}>
         {alert.url}
       </ThemedText>
@@ -86,7 +109,7 @@ function AlertCard({ alert }: { alert: StoredAlert }) {
       )}
 
       <Pressable
-        onPress={() => dismissAlert(alert.id)}
+        onPress={() => dismiss(alert.id)}
         style={({ pressed }) => pressed && styles.pressed}>
         <ThemedText type="small" themeColor="accent">
           Ya lo resolví · Descartar

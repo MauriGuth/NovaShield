@@ -180,7 +180,8 @@ export const useShield = create<ShieldState>()(
               {
                 id: newId(),
                 url: preview.slice(0, 200),
-                domain: result.worstLink?.domain ?? 'Mensaje',
+                // Sin link no hay dominio: la tarjeta lo etiqueta como mensaje.
+                domain: result.worstLink?.domain ?? '',
                 verdict: result.verdict,
                 riskScore: result.riskScore,
                 reasons: result.reasons,

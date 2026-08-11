@@ -58,6 +58,17 @@ La revisión de Fase 2 (18 agentes, 12 hallazgos confirmados) encontró un mismo
 
 `normalizeText` descompone la ñ a n (`contraseña` → `contrasena`). Es deliberado y los patrones se escriben así.
 
+### El escáner de la app rutea entre los dos endpoints (09-08-2026)
+
+La pantalla del escáner invitaba a pegar "un link o el mensaje completo" pero mandaba TODO a `/v1/analyze`: un mensaje sin link fallaba con "no encontramos ningún enlace", y uno con link perdía los patrones de estafa del texto. El endpoint de mensajes existía desde la Fase 2 y ninguna pantalla lo llamaba.
+
+Ahora `scanInputKind()` (en `packages/shared`) decide: link suelto → `/v1/analyze` (muestra redirecciones y capas); todo lo demás → `/v1/messages/analyze`. El sesgo es hacia "mensaje" porque el costo de equivocarse es asimétrico: un link tratado como mensaje se analiza completo igual (el endpoint de mensajes reusa el motor de URLs); un mensaje tratado como link pierde la mitad de las señales o falla.
+
+Dos cosas más salieron de cablear esto:
+
+- **`deepAnalysis` en mensajes.** El tope del plan gratuito ya degradaba los análisis de URLs a capas locales; el de mensajes no tenía el flag, así que un usuario libre pasado su tope habría corrido la IA igual (costo nuestro) o habría que haberle negado el análisis (inaceptable). Mismo contrato en los dos endpoints.
+- **El regex de dominios pelados era ASCII-only.** `mercadolıbre.com.ar` (ı turca) pegado sin `https://` no matcheaba: el mensaje se declaraba "sin enlaces" y el lookalike pasaba invisible — justo la técnica que la heurística de punycode sabe atrapar, un paso antes. Ahora las etiquetas aceptan letras unicode y el TLD se exige ASCII (los TLD reales lo son), con un límite de palabra para no tratar "mañana.Traé" como dominio.
+
 ## Escáner del Dispositivo (Fase 3) — qué se puede leer y qué no
 
 Todo el escaneo es on-device: las señales se leen con APIs públicas sin permisos y se evalúan en `packages/shared/src/device.ts`. Nada de esto sale del teléfono; lo único que puede viajar (y solo con Modo Familia activo) es el **score numérico**.

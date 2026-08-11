@@ -1,4 +1,11 @@
-import { IsIn, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 import type { MessageSource } from '@novashield/shared';
 
 const SOURCES: MessageSource[] = ['sms', 'notification', 'email', 'manual'];
@@ -16,4 +23,9 @@ export class AnalyzeMessageDto {
 
   @IsIn(SOURCES)
   source: MessageSource;
+
+  /** `false` apaga Web Risk + IA (tope del plan gratuito). Ver shared/messages. */
+  @IsOptional()
+  @IsBoolean()
+  deepAnalysis?: boolean;
 }

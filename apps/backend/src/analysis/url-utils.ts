@@ -10,8 +10,18 @@ import { assertPublicHost, isForbiddenHost } from './ssrf';
 export { isForbiddenHost } from './ssrf';
 
 const URL_IN_TEXT = /https?:\/\/[^\s<>"')\]]+/i;
+/**
+ * Dominio pelado dentro de un texto ("entrá a ejemplo.com").
+ *
+ * Las etiquetas aceptan letras unicode a propósito: los lookalikes de phishing
+ * se escriben así ("mercadolıbre.com.ar", con la ı turca) y con la clase ASCII
+ * pasaban invisibles — el mensaje se declaraba sin enlaces. La ÚLTIMA etiqueta
+ * (el TLD) sí se exige ASCII: los TLD reales lo son, y es lo que evita tratar
+ * "mañana.Traé" como si fuera un dominio. `new URL()` después lo pasa a
+ * punycode y la heurística PUNYCODE_HOST hace el resto.
+ */
 const BARE_DOMAIN_IN_TEXT =
-  /(?:^|[\s:>("'])((?:www\.)?[a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+\.?(?:\/[^\s<>"')\]]*)?)/i;
+  /(?:^|[\s:>("'])((?:www\.)?[\p{L}0-9][\p{L}0-9-]*(?:\.[\p{L}0-9][\p{L}0-9-]*)*\.[a-z0-9][a-z0-9-]*(?![\p{L}0-9-])\.?(?:\/[^\s<>"')\]]*)?)/iu;
 
 /** Acortadores conocidos: ocultan el destino real y se expanden server-side. */
 export const KNOWN_SHORTENERS = new Set([
@@ -67,7 +77,9 @@ export function extractUrls(text: string, max = 3): URL[] {
 
   // Sin esquema: solo si no apareció ninguna URL completa, para no duplicar.
   if (found.size === 0) {
-    for (const match of text.matchAll(new RegExp(BARE_DOMAIN_IN_TEXT, 'gi'))) {
+    // La 'u' no es opcional: sin ella, \p{L} deja de ser "letra unicode" y el
+    // patrón se rompe en silencio (matchea la letra p).
+    for (const match of text.matchAll(new RegExp(BARE_DOMAIN_IN_TEXT, 'giu'))) {
       const url = safeParse(`https://${match[1]}`);
       if (url && !found.has(url.href)) found.set(url.href, url);
       if (found.size >= max) break;

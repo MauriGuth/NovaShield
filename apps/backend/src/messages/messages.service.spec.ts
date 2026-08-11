@@ -183,6 +183,61 @@ describe('MessagesService', () => {
     expect(llm.classifyMessage).not.toHaveBeenCalled();
   });
 
+  it('deepAnalysis: false apaga el LLM aunque esté en la franja ambigua', async () => {
+    // Mismo mensaje que dispara el LLM en el test de arriba: la única
+    // diferencia es el flag del plan gratuito.
+    llm.isEnabled = true;
+    llm.classifyMessage.mockResolvedValue({
+      intent: 'scam',
+      confidence: 0.9,
+      rationale: 'no debería llegar acá',
+    });
+    const res = await service.analyze({
+      text: 'URGENTE respondé antes de hoy',
+      source: 'manual',
+      deepAnalysis: false,
+    });
+    expect(llm.classifyMessage).not.toHaveBeenCalled();
+    // Las capas locales siguen dando veredicto: nadie se queda sin respuesta.
+    expect(res.verdict).toBeDefined();
+  });
+
+  it('deepAnalysis: false se propaga al análisis de cada link del mensaje', async () => {
+    await service.analyze({
+      text: 'Mirá esto https://ejemplo.com/promo',
+      source: 'manual',
+      deepAnalysis: false,
+    });
+    expect(analysis.analyze).toHaveBeenCalledWith(
+      'https://ejemplo.com/promo',
+      { deepAnalysis: false },
+    );
+  });
+
+  it('sin el flag, los links se analizan con las capas profundas', async () => {
+    await service.analyze({
+      text: 'Mirá esto https://ejemplo.com/promo',
+      source: 'manual',
+    });
+    expect(analysis.analyze).toHaveBeenCalledWith(
+      'https://ejemplo.com/promo',
+      { deepAnalysis: true },
+    );
+  });
+
+  it('extrae el dominio lookalike con letras unicode aunque venga sin esquema', async () => {
+    // "mercadolıbre" con la ı turca: así se escriben los lookalikes reales.
+    // Con la clase ASCII vieja este mensaje se declaraba "sin enlaces" y el
+    // dominio de phishing pasaba invisible.
+    await service.analyze({
+      text: 'Entrá ya a mercadolıbre.com.ar para validar tu cuenta',
+      source: 'sms',
+    });
+    expect(analysis.analyze).toHaveBeenCalledTimes(1);
+    const [href] = analysis.analyze.mock.calls[0] as [string];
+    expect(href).toContain('xn--'); // new URL() ya lo pasó a punycode
+  });
+
   it('un "legit" del LLM no baja el score (texto atacante-controlado)', async () => {
     llm.isEnabled = true;
     llm.classifyMessage.mockResolvedValue({
