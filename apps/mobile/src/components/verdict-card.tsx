@@ -102,11 +102,17 @@ export function VerdictCard({ result }: { result: AnalyzeResponse }) {
  * Veredicto de un MENSAJE: mismo lenguaje visual que el de enlaces, pero el
  * protagonista es el consejo del backend ("no pases el código", "llamá al
  * número que ya tenías"), que viene priorizado según el patrón más grave.
+ *
+ * `degraded` viene de la app (que sabe qué pidió): el análisis corrió sin las
+ * capas pagas por el tope diario del plan gratuito, y eso se dice — un
+ * análisis recortado presentado como completo es una tranquilidad de más.
  */
 export function MessageVerdictCard({
   result,
+  degraded = false,
 }: {
   result: AnalyzeMessageResponse;
+  degraded?: boolean;
 }) {
   const theme = useTheme();
   const ui = VERDICT_UI[result.verdict];
@@ -120,7 +126,7 @@ export function MessageVerdictCard({
           { backgroundColor: theme[ui.softColor], borderColor: theme[ui.color] },
         ]}>
         <ThemedText type="subtitle" style={{ color: theme[ui.color] }}>
-          {ui.title}
+          {ui.messageTitle}
         </ThemedText>
         <ThemedText type="small">{result.advice}</ThemedText>
       </View>
@@ -138,9 +144,19 @@ export function MessageVerdictCard({
 
       <ReasonList reasons={result.reasons} />
 
+      {degraded && (
+        <ThemedText type="small" themeColor="textSecondary">
+          Análisis con las capas locales (alcanzaste el tope diario del plan
+          gratuito): sin verificación de Web Risk ni IA.
+        </ThemedText>
+      )}
+
+      {/* La promesa es sobre lo que controlamos: nuestro backend analiza y
+          descarta, no persiste mensajes. No afirma nada sobre terceros — si
+          corrió la IA, eso ya se ve en la razón correspondiente. */}
       <ThemedText type="small" themeColor="textSecondary">
-        Analizado en {result.durationMs} ms · El texto del mensaje no se guarda
-        en el servidor.
+        Analizado en {result.durationMs} ms · No guardamos el texto de tu
+        mensaje.
       </ThemedText>
     </View>
   );

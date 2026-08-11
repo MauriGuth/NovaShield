@@ -32,26 +32,24 @@ export interface AnalyzeMessageRequest {
 /**
  * ¿Lo que pegó el usuario es un link suelto o un mensaje?
  *
- * Decide a qué endpoint va: un link suelto rinde más en /v1/analyze (muestra
- * redirecciones y capas), y cualquier otra cosa va a /v1/messages/analyze, que
+ * Decide a qué endpoint va: un solo token (sin espacios) SIEMPRE va a
+ * /v1/analyze, y cualquier cosa con espacios va a /v1/messages/analyze, que
  * además de analizar los links que traiga busca los patrones de estafa en el
- * texto. El sesgo es deliberado hacia "mensaje": un mensaje clasificado como
- * link pierde la detección de patrones (o directamente falla con "no
- * encontramos ningún enlace"), mientras que un link clasificado como mensaje
- * se analiza igual de completo — solo se ve una tarjeta menos detallada.
+ * texto.
+ *
+ * Por qué un token suelto nunca va al camino de mensajes: los patrones de
+ * estafa necesitan oraciones, así que sobre un token el analizador de mensajes
+ * solo puede responder "sin señales" — y eso, dicho de un link mal pegado
+ * ("https:/ejemplo.com", ".ejemplo.com") que no se pudo extraer ni analizar,
+ * es una tranquilidad falsa. El camino de URLs en cambio lo analiza si se
+ * entiende, y si no falla VISIBLE, con la instrucción de pegar el link
+ * completo. En una app de seguridad, un error que corrige vale más que un
+ * "seguro" que no verificó nada.
  */
 export function scanInputKind(text: string): 'link' | 'message' {
   const trimmed = text.trim();
-  // Espacios adentro = hay más que un link: eso es un mensaje.
-  if (!trimmed || /\s/.test(trimmed)) return 'message';
-  if (/^https?:\/\//i.test(trimmed)) return 'link';
-  // Dominio pelado en un solo token ("bit.ly/x", "mercadolıbre.com.ar"). Se
-  // permiten letras unicode en el dominio —así se escriben los lookalikes—
-  // pero la última etiqueta (el TLD) tiene que ser ASCII: los TLD reales lo
-  // son, y esto evita tratar "hola.qué" como si fuera un link.
-  return /^[\p{L}0-9][\p{L}0-9.-]*\.[a-z0-9-]{2,}(?:[/?#]\S*)?$/iu.test(trimmed)
-    ? 'link'
-    : 'message';
+  if (!trimmed) return 'message';
+  return /\s/.test(trimmed) ? 'message' : 'link';
 }
 
 export interface AnalyzeMessageResponse {

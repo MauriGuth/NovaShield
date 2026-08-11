@@ -225,6 +225,20 @@ describe('MessagesService', () => {
     );
   });
 
+  it('un link roto en el mensaje degrada a unknown, nunca a safe', async () => {
+    // "https:/" con la barra comida: no se puede extraer ninguna URL, pero el
+    // mensaje CLARAMENTE habla de un enlace. Declararlo "safe" sería afirmar
+    // la seguridad de algo que no se pudo ni leer (hallazgo de la revisión
+    // adversarial: fail-open).
+    const res = await service.analyze({
+      text: 'Mirá esto https:/ejemplo.com/promo te va a interesar',
+      source: 'manual',
+    });
+    expect(analysis.analyze).not.toHaveBeenCalled();
+    expect(res.verdict).toBe('unknown');
+    expect(res.reasons.map((r) => r.code)).toContain('LINK_UNREADABLE');
+  });
+
   it('extrae el dominio lookalike con letras unicode aunque venga sin esquema', async () => {
     // "mercadolıbre" con la ı turca: así se escriben los lookalikes reales.
     // Con la clase ASCII vieja este mensaje se declaraba "sin enlaces" y el

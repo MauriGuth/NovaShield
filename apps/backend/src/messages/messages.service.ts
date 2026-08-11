@@ -121,12 +121,30 @@ export class MessagesService {
       // atacante-controlado y podría pedirle que lo declare inofensivo.
     }
 
+    // El mensaje menciona algo con pinta de enlace ("https:/", "www.") pero la
+    // extracción no encontró NINGUNA URL: casi siempre es un link cortado o
+    // mal pegado. No se puede declarar "seguro" un mensaje cuyo enlace no se
+    // pudo ni leer — se degrada a unknown y se le dice al usuario qué pasó.
+    const linkDebris =
+      urls.length === 0 && /https?[:/]|www\./i.test(input.text);
+    if (linkDebris) {
+      reasons.push({
+        code: 'LINK_UNREADABLE',
+        layer: 'heuristics',
+        severity: 'warning',
+        title: 'Hay algo con pinta de enlace que no pudimos leer',
+        detail:
+          'El mensaje menciona un enlace pero parece estar cortado o mal pegado, así que no lo pudimos verificar. Si lo querés revisar, pegá el link completo (con https://) en el escáner.',
+      });
+    }
+
     // "Seguro" solo puede afirmarse si los enlaces del mensaje efectivamente
-    // se verificaron con las listas cargadas. Si algún análisis falló o la
-    // capa 1 estaba vacía, el veredicto con score bajo es "unknown", no "safe":
-    // un producto de seguridad no puede convertir sus propias fallas en un
-    // "todo bien".
+    // se verificaron con las listas cargadas. Si algún análisis falló, quedó
+    // un enlace ilegible o la capa 1 estaba vacía, el veredicto con score bajo
+    // es "unknown", no "safe": un producto de seguridad no puede convertir sus
+    // propias fallas en un "todo bien".
     const conclusive =
+      !linkDebris &&
       analyzed.length === urls.length &&
       (urls.length === 0 ||
         analyzed.every((r) => r.checkedLayers.blocklists));

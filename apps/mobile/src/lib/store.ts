@@ -174,8 +174,12 @@ export const useShield = create<ShieldState>()(
 
       recordMessageScan: (result, preview) =>
         set((state) => {
-          if (result.verdict === 'safe') return state;
+          // Analizar un mensaje ES un análisis: cuenta para el "X análisis
+          // hechos" de la home y para el Score igual que el de un enlace.
+          const scansCount = state.scansCount + 1;
+          if (result.verdict === 'safe') return { scansCount };
           return {
+            scansCount,
             messageAlerts: [
               {
                 id: newId(),

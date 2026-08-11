@@ -35,7 +35,10 @@ const REQUEST_TIMEOUT_MS = 25_000;
  */
 type ScanResult =
   | { kind: 'link'; data: AnalyzeResponse }
-  | { kind: 'message'; data: AnalyzeMessageResponse };
+  // `degraded` se captura en el momento del pedido: el contador diario cambia
+  // apenas se registra el análisis, y leer `deepAllowed` al renderizar
+  // marcaría como recortado un análisis que sí corrió completo.
+  | { kind: 'message'; data: AnalyzeMessageResponse; degraded: boolean };
 
 export default function ScannerScreen() {
   const theme = useTheme();
@@ -51,6 +54,8 @@ export default function ScannerScreen() {
 
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  // Qué decir mientras se espera: depende de qué camino tomó el análisis.
+  const [loadingLabel, setLoadingLabel] = useState('Analizando…');
   const [result, setResult] = useState<ScanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -99,12 +104,14 @@ export default function ScannerScreen() {
         // mensaje por el camino de URLs perdía esa segunda señal — o fallaba
         // directamente si el mensaje no traía ningún link.
         if (scanInputKind(trimmed) === 'link') {
+          setLoadingLabel('Consultando bases de amenazas…');
           const response = await analyzeUrl(trimmed, pending.ctrl.signal, {
             deepAnalysis: deepAllowed,
           });
           setResult({ kind: 'link', data: response });
           recordScan(response);
         } else {
+          setLoadingLabel('Buscando señales de estafa en el texto…');
           const response = await analyzeMessage(
             {
               text: trimmed,
@@ -113,7 +120,7 @@ export default function ScannerScreen() {
             },
             pending.ctrl.signal,
           );
-          setResult({ kind: 'message', data: response });
+          setResult({ kind: 'message', data: response, degraded: !deepAllowed });
           recordMessageScan(response, trimmed);
         }
         if (deepAllowed) countAnalysis(localDateKey());
@@ -219,7 +226,7 @@ export default function ScannerScreen() {
             <View style={styles.loading}>
               <ActivityIndicator color={theme.accent} />
               <ThemedText type="small" themeColor="textSecondary">
-                Consultando bases de amenazas…
+                {loadingLabel}
               </ThemedText>
             </View>
           )}
@@ -239,7 +246,7 @@ export default function ScannerScreen() {
             (result.kind === 'link' ? (
               <VerdictCard result={result.data} />
             ) : (
-              <MessageVerdictCard result={result.data} />
+              <MessageVerdictCard result={result.data} degraded={result.degraded} />
             ))}
         </ScrollView>
       </SafeAreaView>

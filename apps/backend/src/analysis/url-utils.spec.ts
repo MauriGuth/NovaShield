@@ -40,6 +40,13 @@ describe('extractUrl', () => {
     expect(url?.hostname).toBe('xn--mercadolbre-6zb.com.ar');
   });
 
+  it('un token que ES un dominio acepta lookalike unicode de dos etiquetas', () => {
+    // Pegado solo en el escáner no hay prosa que confunda: se analiza aunque
+    // tenga solo dos etiquetas (dentro de un texto se exigen tres).
+    const url = extractUrl('bancoestаdo.cl'); // а cirílica
+    expect(url?.hostname).toBe('xn--bancoestdo-6qi.cl');
+  });
+
   it('no confunde dos palabras pegadas por un punto con un dominio', () => {
     // La última etiqueta (el TLD) tiene que ser ASCII: "Traé" no lo es.
     expect(extractUrl('nos vemos mañana.Traé el mate')).toBeNull();
@@ -54,6 +61,28 @@ describe('extractUrls (mensajes con varios links)', () => {
     expect(urls.map((u) => u.hostname)).toContain(
       'xn--mercadolbre-6zb.com.ar',
     );
+  });
+
+  it('NO fabrica dominios con el chat rioplatense sin espacio tras el punto', () => {
+    // "mañana.te" tiene solo dos etiquetas: el candidato unicode exige tres.
+    // Sin esta regla, un mensaje inocente disparaba la señal crítica de
+    // punycode sobre un xn--… fantasma (hallazgo de la revisión adversarial).
+    for (const texto of [
+      'nos vemos mañana.te aviso cualquier cosa',
+      'llegó al país.hay que ir a buscarlo',
+      'qué lindo día.vamos a la plaza',
+      'mañana.me avisás',
+    ]) {
+      expect(extractUrls(texto)).toHaveLength(0);
+    }
+  });
+
+  it('el dominio ASCII pegado a una letra unicode se extrae igual', () => {
+    // Los linkificadores de los chats descartan el carácter raro final: la
+    // víctima puede llegar al sitio, así que el análisis también tiene que
+    // llegar. El borde de palabra aplica SOLO a candidatos unicode.
+    const urls = extractUrls('Entrá a validar tu cuenta en bancofalso.comа urgente');
+    expect(urls.map((u) => u.hostname)).toContain('bancofalso.com');
   });
 
   it('con URL completa presente, no duplica con dominios pelados', () => {

@@ -13,15 +13,40 @@ const URL_IN_TEXT = /https?:\/\/[^\s<>"')\]]+/i;
 /**
  * Dominio pelado dentro de un texto ("entrá a ejemplo.com").
  *
- * Las etiquetas aceptan letras unicode a propósito: los lookalikes de phishing
- * se escriben así ("mercadolıbre.com.ar", con la ı turca) y con la clase ASCII
- * pasaban invisibles — el mensaje se declaraba sin enlaces. La ÚLTIMA etiqueta
- * (el TLD) sí se exige ASCII: los TLD reales lo son, y es lo que evita tratar
- * "mañana.Traé" como si fuera un dominio. `new URL()` después lo pasa a
- * punycode y la heurística PUNYCODE_HOST hace el resto.
+ * Dos alternativas con exigencias distintas, y el porqué importa:
+ *
+ * - CON letras unicode: así se escriben los lookalikes de phishing
+ *   ("mercadolıbre.com.ar", con la ı turca), que con la clase ASCII pasaban
+ *   invisibles. Pero el chat rioplatense escribe "mañana.te aviso" o
+ *   "país.hay que ir" todo el tiempo (sin espacio tras el punto), y tratarlos
+ *   como dominios fabricaba un xn--… fantasma con una señal CRÍTICA falsa
+ *   sobre un mensaje inocente. Por eso el candidato unicode exige DOS
+ *   etiquetas antes del TLD (mercadolıbre.com.ar sí, mañana.te no), TLD ASCII
+ *   (los TLD reales lo son) y borde de palabra al final.
+ * - Solo ASCII: el patrón histórico, sin exigencias nuevas — cualquier
+ *   endurecimiento acá sería una regresión. En particular, sin borde de
+ *   palabra: "bancofalso.comа" (con la а cirílica pegada al final) tiene que
+ *   seguir extrayendo bancofalso.com, igual que hacen los linkificadores de
+ *   los chats por los que la víctima puede llegar al sitio.
+ *
+ * El candidato unicode va primero: sobre "sub.mercadolıbre.com" la
+ * alternativa ASCII sola cortaría en "sub.mercadol".
  */
-const BARE_DOMAIN_IN_TEXT =
-  /(?:^|[\s:>("'])((?:www\.)?[\p{L}0-9][\p{L}0-9-]*(?:\.[\p{L}0-9][\p{L}0-9-]*)*\.[a-z0-9][a-z0-9-]*(?![\p{L}0-9-])\.?(?:\/[^\s<>"')\]]*)?)/iu;
+const ASCII_LABELS = String.raw`[a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+`;
+const UNICODE_LABELS = String.raw`[\p{L}0-9][\p{L}0-9-]*(?:\.[\p{L}0-9][\p{L}0-9-]*)+\.[a-z0-9][a-z0-9-]*(?![\p{L}0-9-])`;
+const BARE_DOMAIN_IN_TEXT = new RegExp(
+  String.raw`(?:^|[\s:>("'])((?:www\.)?(?:${UNICODE_LABELS}|${ASCII_LABELS})\.?(?:\/[^\s<>"')\]]*)?)`,
+  'iu',
+);
+
+/**
+ * Un token que ES un dominio, pegado solo (sin prosa alrededor que pueda
+ * confundir): acá se acepta también el lookalike unicode de dos etiquetas
+ * ("bancoestаdo.cl") que el patrón de arriba, por prudencia, no extrae de
+ * adentro de un texto.
+ */
+const WHOLE_BARE_TOKEN =
+  /^(?:www\.)?[\p{L}0-9][\p{L}0-9-]*(?:\.[\p{L}0-9][\p{L}0-9-]*)*\.[a-z0-9][a-z0-9-]*\.?(?:[/?#][^\s]*)?$/iu;
 
 /** Acortadores conocidos: ocultan el destino real y se expanden server-side. */
 export const KNOWN_SHORTENERS = new Set([
@@ -55,6 +80,10 @@ export function extractUrl(text: string): URL | null {
 
   const withScheme = trimmed.match(URL_IN_TEXT)?.[0];
   if (withScheme) return safeParse(withScheme);
+
+  // Primero el texto entero como dominio (acepta lookalikes unicode cortos),
+  // después la búsqueda adentro del texto.
+  if (WHOLE_BARE_TOKEN.test(trimmed)) return safeParse(`https://${trimmed}`);
 
   const bare = trimmed.match(BARE_DOMAIN_IN_TEXT)?.[1];
   if (bare) return safeParse(`https://${bare}`);
