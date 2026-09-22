@@ -234,7 +234,19 @@ Un panel de 41 agentes (mapa del código por subsistema → propuestas desde cua
 
 Verificado en vivo contra un backend local: 62 pedidos desde una IP reciben 429 con `Retry-After: 60` mientras otra IP sigue con cupo (el `trust proxy` funciona), health no se throttlea, el redirect embebido nombra el destino y detecta la marca, y las cuatro modalidades nuevas dan veredicto.
 
-Lo que este bloque NO arregla y sigue abierto: el túnel de Android bloquea todo el IPv6 del teléfono (`allowFamily`), deja los DNS viejos al pasar de WiFi a 4G, la detección de DNS privado es código muerto, y en iOS el estado del túnel queda pegado si la extensión muere. Son Kotlin y Swift: van después de la prueba en hardware.
+### Bloque 2: los nativos
+
+| Bug | Arreglo |
+|---|---|
+| El túnel de Android bloqueaba TODO el IPv6 del teléfono (la doc de `VpnService.Builder`: sin dirección/ruta/DNS de una familia, todo lo saliente de esa familia se descarta) | `allowFamily(AF_INET6)`: el IPv6 pasa por fuera intacto; el DNS sigue entrando porque los únicos DNS de la interfaz son los alias IPv4 |
+| Al pasar de WiFi a 4G el callback ignoraba el cambio si la red nueva no traía IPv4: el túnel seguía apuntando a los resolvers del WiFi anterior y cada consulta tardaba 4 s en fallar | Se compara la lista completa (v4+v6) y se rearma aunque venga vacía; el fallback queda declarado en el diagnóstico (`upstreamIsFallback`) |
+| La detección de "algo esquiva el escudo" era código muerto en Android (el servicio publica diagnóstico con 0 paquetes apenas arranca, así que `available === false` no pasaba nunca) | Detección REAL: `LinkProperties.privateDnsServerName != null` (solo el modo hostname; "Automático" no es problema) → estado `bypassed`, notificación con los pasos, tarjeta en amarillo, Score sin los +30. La heurística de "un minuto sin paquetes" queda como respaldo con la condición corregida |
+| `onRevoke()` publicaba `preempted` y `stopShield()` lo pisaba con `inactive` | `stopShield(finalStatus)` |
+| La sonda de DNS sobre TLS (SYN al alias:853) se descartaba y el sistema tardaba segundos en volver al 53 | RST también para el 853, en Kotlin y en Swift (iOS no respondía RST a ningún SYN) |
+| En iOS el estado quedaba pegado en "active" si la extensión moría (jetsam): el observer solo recibe cambios con la app viva | `loadAllFromPreferences` al arrancar, en cada `getStatus()` y al volver al frente; si difiere, `onStatusChange` |
+| iOS: la app leía los contadores de la sesión anterior del túnel | Foto en cero al arrancar cada sesión |
+
+Kotlin compilado acá (`:nova-shield:compileReleaseKotlin`); Swift solo se compila en la Mac. Decisión pendiente que este bloque deja escrita y no toma: el fallback a Quad9 (Android sin DNS IPv4; iOS todo el DNS) no está declarado en la política de privacidad ni en las notas de App Review. O se declara como tercero, o se elimina y el escudo se declara `inactive` con motivo visible.
 
 ## Riesgos activos
 

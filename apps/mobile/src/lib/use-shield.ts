@@ -187,6 +187,12 @@ export function describeStatus(status: ShieldStatus): {
         detail:
           'Otra VPN o perfil DNS está activo y tiene prioridad sobre el escudo. Desactivala para que Nova Shield vuelva a protegerte.',
       };
+    case 'bypassed':
+      return {
+        label: 'Escudo prendido, pero esquivado',
+        detail:
+          'Tu teléfono tiene un DNS privado con servidor fijo y manda las consultas por fuera del escudo: ahora no podemos frenar nada. Ponelo en Automático: Ajustes → Red e internet → DNS privado.',
+      };
     case 'needs_permission':
       return {
         label: 'Falta un paso',

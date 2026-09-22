@@ -34,6 +34,12 @@ export type ShieldStatus =
   | 'inactive'
   /** Otra VPN o perfil DNS tiene precedencia: la protección está pausada. */
   | 'preempted'
+  /**
+   * El túnel está levantado pero el sistema manda las consultas por fuera
+   * (Android: DNS privado con hostname fijo). No protege, y hay que decirlo:
+   * "activo" acá sería una tranquilidad falsa.
+   */
+  | 'bypassed'
   /** El build o el dispositivo no soportan el escudo (p. ej. Expo Go). */
   | 'unsupported'
   /** Falta que el usuario lo habilite a mano en Ajustes. */

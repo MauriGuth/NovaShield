@@ -39,12 +39,14 @@ export default function HomeScreen() {
     getShieldStatus(),
   );
   const shieldActive = shieldStatus === 'active';
+  const shieldBypassed = shieldStatus === 'bypassed';
 
   const { score, pendingActions } = computeScore({
     scansCount,
     alerts,
     shieldEnabled: shieldActive,
     shieldWanted,
+    shieldBypassed,
     messageProtectionEnabled,
     deviceScan,
   });
@@ -120,7 +122,7 @@ export default function HomeScreen() {
                       {
                         backgroundColor: shieldActive
                           ? theme.accent
-                          : shieldWanted
+                          : shieldWanted || shieldBypassed
                             ? theme.warn
                             : theme.textSecondary,
                       },
@@ -129,17 +131,21 @@ export default function HomeScreen() {
                   <ThemedText type="smallBold">
                     {shieldActive
                       ? 'Escudo DNS activo'
-                      : shieldWanted
-                        ? 'Escudo DNS apagado — lo tenías prendido'
-                        : 'Escudo DNS apagado'}
+                      : shieldBypassed
+                        ? 'Escudo DNS prendido, pero esquivado'
+                        : shieldWanted
+                          ? 'Escudo DNS apagado — lo tenías prendido'
+                          : 'Escudo DNS apagado'}
                   </ThemedText>
                 </View>
                 <ThemedText type="small" themeColor="textSecondary">
                   {shieldActive
                     ? `${totalBlocked} ${totalBlocked === 1 ? 'sitio bloqueado' : 'sitios bloqueados'} hasta ahora.`
-                    : shieldWanted
-                      ? 'Un reinicio, otra VPN o el sistema lo cerró. Tocá para volver a prenderlo.'
-                      : 'Bloquea sitios de estafa en todas tus apps, sin que hagas nada.'}
+                    : shieldBypassed
+                      ? 'Tu DNS privado manda las consultas por fuera del escudo. Tocá para ver cómo arreglarlo.'
+                      : shieldWanted
+                        ? 'Un reinicio, otra VPN o el sistema lo cerró. Tocá para volver a prenderlo.'
+                        : 'Bloquea sitios de estafa en todas tus apps, sin que hagas nada.'}
                 </ThemedText>
               </ThemedView>
             </Pressable>

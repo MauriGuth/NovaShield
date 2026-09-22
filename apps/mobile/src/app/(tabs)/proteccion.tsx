@@ -53,7 +53,9 @@ export default function ProteccionScreen() {
   const [messagesEnabled, setMessagesEnabled] = useState(
     () => NovaShield?.isMessageProtectionEnabled() ?? false,
   );
-  const shieldIsActive = status === 'active';
+  // 'bypassed' cuenta como túnel levantado (el switch está prendido) pero NO
+  // como protegido: la tarjeta lo dice en amarillo y el Score no lo suma.
+  const shieldIsActive = status === 'active' || status === 'bypassed';
 
   useEffect(() => {
     // El momento en que el escudo pasó a activo queda capturado en el closure:
@@ -65,9 +67,14 @@ export default function ProteccionScreen() {
     const refresh = () => {
       const fresh = NovaShield?.getShieldDiagnostics?.();
       setDiagnostics(fresh);
+      // En Android el servicio publica el diagnóstico apenas arranca (con 0
+      // paquetes), así que `available === false` no pasaba nunca y este aviso
+      // era código muerto; la condición honesta es "un minuto activo sin ver
+      // ni un paquete". En iOS la extensión recién publica con el primer
+      // paquete, y las dos condiciones coinciden.
       setBypassSuspected(
         shieldIsActive &&
-          fresh?.available === false &&
+          (fresh?.available === false || fresh?.packets === 0) &&
           Date.now() - activeSince > 60_000,
       );
       // La Protección de Mensajes se habilita en los Ajustes del sistema, o sea
@@ -89,14 +96,15 @@ export default function ProteccionScreen() {
     };
   }, [shieldIsActive]);
 
-  const isActive = status === 'active';
+  const isActive = status === 'active' || status === 'bypassed';
 
-  const isProblem = status === 'preempted';
-  const statusColor = isActive
-    ? theme.accent
-    : isProblem
-      ? theme.warn
-      : theme.textSecondary;
+  const isProblem = status === 'preempted' || status === 'bypassed';
+  const statusColor =
+    status === 'active'
+      ? theme.accent
+      : isProblem
+        ? theme.warn
+        : theme.textSecondary;
 
   // Al abrir la pantalla revisamos si la lista quedó vieja.
   useEffect(() => {
@@ -203,7 +211,7 @@ export default function ProteccionScreen() {
               Sin este aviso el usuario cree que está protegido y no lo está,
               que es el peor estado posible para este producto.
             */}
-            {isActive && bypassSuspected && (
+            {((isActive && bypassSuspected) || status === 'bypassed') && (
               <ThemedView type="background" style={styles.warningCard}>
                 <ThemedText type="smallBold" style={{ color: theme.warn }}>
                   El escudo está activo pero no ve tu navegación

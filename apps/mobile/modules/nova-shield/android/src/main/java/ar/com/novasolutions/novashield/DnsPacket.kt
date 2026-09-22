@@ -205,7 +205,11 @@ object DnsPacket {
     if ((packet[9].toInt() and 0xFF) != PROTO_TCP) return null
 
     val tcp = ipHeaderLength
-    if (readUShort(packet, tcp + 2) != 53) return null // solo el puerto DNS
+    // 53: fallback TCP del resolver. 853: la sonda de DNS sobre TLS del modo
+    // "Automático" del DNS privado — sin RST el SYN se descartaba y el sistema
+    // demoraba varios segundos en volver al 53 en texto plano.
+    val destPort = readUShort(packet, tcp + 2)
+    if (destPort != 53 && destPort != 853) return null
 
     val flags = packet[tcp + 13].toInt() and 0xFF
     if (flags and 0x02 == 0 || flags and 0x10 != 0) return null // solo SYN puro
@@ -232,7 +236,7 @@ object DnsPacket {
     out.put(sourceIp)
 
     // — TCP: RST+ACK, seq=0, ack=seq_entrante+1 (RFC 793 para un SYN) —
-    out.putShort(53)
+    out.putShort(destPort.toShort())
     out.putShort(sourcePort.toShort())
     out.putInt(0)
     out.putInt((sequence + 1L).toInt())

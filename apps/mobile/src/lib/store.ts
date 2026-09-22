@@ -252,6 +252,8 @@ export function computeScore(state: {
   shieldEnabled?: boolean;
   /** El usuario lo prendió alguna vez y no lo apagó: si no está activo, algo lo tiró. */
   shieldWanted?: boolean;
+  /** Prendido pero esquivado por el DNS privado del sistema (Android). */
+  shieldBypassed?: boolean;
   messageProtectionEnabled?: boolean;
   deviceScan?: DeviceScanResult | null;
 }): ScoreBreakdown {
@@ -260,6 +262,10 @@ export function computeScore(state: {
 
   if (state.shieldEnabled) {
     score += 30;
+  } else if (state.shieldBypassed) {
+    pendingActions.push(
+      'El escudo está prendido pero tu DNS privado lo esquiva: Ajustes → Red e internet → DNS privado → Automático.',
+    );
   } else if (state.shieldWanted) {
     pendingActions.push(
       'El Escudo DNS quedó apagado (un reinicio, otra VPN o el sistema lo cerró). Entrá a Protección y volvé a prenderlo.',

@@ -39,6 +39,8 @@ object ShieldBus {
   private const val KEY_DIAG_BLOCKED = "diagBlocked"
   private const val KEY_DIAG_LIST = "diagListCount"
   private const val KEY_DIAG_AT = "diagAt"
+  private const val KEY_DIAG_FALLBACK = "diagUpstreamIsFallback"
+  private const val KEY_DIAG_PRIVATE_DNS = "diagPrivateDnsStrict"
 
   /** Igual que en iOS: alcanza para la lista de "últimos bloqueos" de la app. */
   private const val MAX_RECENT = 50
@@ -156,12 +158,16 @@ object ShieldBus {
     queries: Int,
     blocked: Int,
     listCount: Int,
+    upstreamIsFallback: Boolean = false,
+    privateDnsStrict: Boolean = false,
   ) {
     prefs(context).edit()
       .putInt(KEY_DIAG_PACKETS, packets)
       .putInt(KEY_DIAG_QUERIES, queries)
       .putInt(KEY_DIAG_BLOCKED, blocked)
       .putInt(KEY_DIAG_LIST, listCount)
+      .putBoolean(KEY_DIAG_FALLBACK, upstreamIsFallback)
+      .putBoolean(KEY_DIAG_PRIVATE_DNS, privateDnsStrict)
       .putLong(KEY_DIAG_AT, System.currentTimeMillis())
       .apply()
   }
@@ -178,6 +184,10 @@ object ShieldBus {
       // Segundos desde epoch, igual que iOS (allá viene de timeIntervalSince1970).
       "at" to (at / 1000.0),
       "lastError" to prefs.getString(KEY_LAST_ERROR, null),
+      // La red no expuso DNS IPv4 y el túnel reenvía al resolver de fallback.
+      "upstreamIsFallback" to prefs.getBoolean(KEY_DIAG_FALLBACK, false),
+      // DNS privado con hostname fijo: las consultas esquivan el túnel.
+      "privateDnsStrict" to prefs.getBoolean(KEY_DIAG_PRIVATE_DNS, false),
     )
   }
 }

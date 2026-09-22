@@ -1,6 +1,7 @@
 import ExpoModulesCore
 import UserNotifications
 import NetworkExtension
+import UIKit
 
 /**
  Módulo nativo del Escudo DNS y la Protección de Mensajes (iOS).
@@ -38,6 +39,7 @@ public class NovaShieldModule: Module {
   private static let tunnelBundleId = "ar.com.novasolutions.novashield.network-packet-tunnel"
 
   private var statusObserver: NSObjectProtocol?
+  private var foregroundObserver: NSObjectProtocol?
 
   public func definition() -> ModuleDefinition {
     Name("NovaShield")
@@ -46,10 +48,15 @@ public class NovaShieldModule: Module {
 
     OnCreate {
       self.observeTunnelStatus()
+      self.observeForeground()
+      self.refreshTunnelStatus()
     }
 
     OnDestroy {
       if let observer = self.statusObserver {
+        NotificationCenter.default.removeObserver(observer)
+      }
+      if let observer = self.foregroundObserver {
         NotificationCenter.default.removeObserver(observer)
       }
     }
@@ -57,7 +64,10 @@ public class NovaShieldModule: Module {
     // — Escudo DNS —
 
     Function("getStatus") { () -> String in
-      self.currentStatus()
+      // Devuelve lo último que se supo y dispara una consulta real al sistema:
+      // si cambió, llega por `onStatusChange` y la próxima lectura ya lo trae.
+      self.refreshTunnelStatus()
+      return self.currentStatus()
     }
 
     AsyncFunction("requestPermission") { (promise: Promise) in
@@ -285,10 +295,50 @@ public class NovaShieldModule: Module {
   }
 
   private func currentStatus() -> String {
-    // El estado real lo tiene la conexión del túnel; se consulta de forma
-    // sincrónica sobre la última configuración conocida.
+    // Última lectura conocida (la escribe refreshTunnelStatus y el observer).
     guard let defaults = UserDefaults(suiteName: Self.appGroup) else { return "inactive" }
     return defaults.string(forKey: "shieldStatus") ?? "inactive"
+  }
+
+  private static func statusName(for status: NEVPNStatus) -> String {
+    switch status {
+    case .connected: return "active"
+    case .invalid: return "needs_permission"
+    default: return "inactive"
+    }
+  }
+
+  /**
+   Le pregunta al sistema el estado REAL del túnel.
+
+   El observer de abajo solo recibe cambios mientras la app está viva. Si la
+   extensión muere por memoria (jetsam) con la app cerrada, la clave del App
+   Group se queda en "active" para siempre y la app, el Score y la familia lo
+   repiten. Por eso se consulta al arrancar, en cada vuelta al frente y en cada
+   `getStatus()`: la respuesta llega en el próximo ciclo, y si difiere de lo
+   guardado se avisa por `onStatusChange`.
+   */
+  private func refreshTunnelStatus() {
+    NETunnelProviderManager.loadAllFromPreferences { [weak self] managers, _ in
+      guard let self else { return }
+      let status: String
+      if let connection = managers?.first?.connection {
+        status = Self.statusName(for: connection.status)
+      } else {
+        status = "inactive"
+      }
+      self.publishStatus(status)
+    }
+  }
+
+  private func publishStatus(_ status: String) {
+    let defaults = UserDefaults(suiteName: Self.appGroup)
+    let previous = defaults?.string(forKey: "shieldStatus")
+    defaults?.set(status, forKey: "shieldStatus")
+    guard previous != status else { return }
+    DispatchQueue.main.async { [weak self] in
+      self?.sendEvent("onStatusChange", ["status": status])
+    }
   }
 
   /// El sistema publica los cambios de estado del túnel por NotificationCenter
@@ -300,16 +350,19 @@ public class NovaShieldModule: Module {
       queue: .main
     ) { [weak self] notification in
       guard let self, let connection = notification.object as? NEVPNConnection else { return }
+      self.publishStatus(Self.statusName(for: connection.status))
+    }
+  }
 
-      let status: String
-      switch connection.status {
-      case .connected: status = "active"
-      case .invalid: status = "needs_permission"
-      default: status = "inactive"
-      }
-
-      UserDefaults(suiteName: Self.appGroup)?.set(status, forKey: "shieldStatus")
-      self.sendEvent("onStatusChange", ["status": status])
+  /// Al volver al frente se relee el estado: es el momento en que el usuario
+  /// mira la app después de que algo pudo haber tirado el túnel.
+  private func observeForeground() {
+    foregroundObserver = NotificationCenter.default.addObserver(
+      forName: UIApplication.didBecomeActiveNotification,
+      object: nil,
+      queue: .main
+    ) { [weak self] _ in
+      self?.refreshTunnelStatus()
     }
   }
 }

@@ -115,6 +115,9 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         return
       }
       self?.updateStatus("active")
+      // Foto en cero de la sesión nueva: sin esto la app leía los contadores
+      // de la sesión anterior y creía que este túnel ya había visto tráfico.
+      self?.publishDiagnostics()
       self?.readPackets()
       completionHandler(nil)
     }
@@ -212,7 +215,15 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         packetsSeen, queriesParsed, blockedCount, ShieldBlocklist.shared.domainCount)
     }
 
-    guard let query = DnsPacketParser.parseQuery(packet) else { return }
+    guard let query = DnsPacketParser.parseQuery(packet) else {
+      // Un SYN de TCP al DNS interno (53: fallback por respuesta truncada; 853:
+      // sonda de DNS sobre TLS). No se proxya TCP: se responde RST para que el
+      // resolver falle rápido y siga, en vez de colgarse hasta su timeout.
+      if let rst = DnsPacketParser.buildTcpRstForSyn(packet) {
+        packetFlow.writePackets([rst], withProtocols: [NSNumber(value: AF_INET)])
+      }
+      return
+    }
     queriesParsed += 1
 
     if ShieldBlocklist.shared.isBlocked(query.domain) {

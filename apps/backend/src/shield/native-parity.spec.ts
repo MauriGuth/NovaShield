@@ -150,6 +150,46 @@ describe('módulo Android · trampas que solo aparecen al compilar', () => {
     expect(namespace).not.toBe(appConfig.expo.android.package);
   });
 
+  it('el túnel deja pasar IPv6 por fuera (allowFamily), o Android lo bloquea entero', () => {
+    // VpnService.Builder: si la VPN no agrega dirección, ruta ni DNS de una
+    // familia, TODO el tráfico saliente de esa familia se descarta. El túnel
+    // solo tiene IPv4: sin esta línea, con el escudo activo las apps pierden
+    // IPv6 en cualquier red. El DNS sigue entrando por los alias IPv4.
+    const service = readFileSync(
+      join(REPO_ROOT, ANDROID_MODULE, 'src/main/java/ar/com/novasolutions/novashield/DnsShieldVpnService.kt'),
+      'utf8',
+    );
+    expect(service).toMatch(/allowFamily\(OsConstants\.AF_INET6\)/);
+  });
+
+  it('el RST de TCP cubre el 53 y el 853 en las dos plataformas', () => {
+    // La sonda de DNS sobre TLS del modo "Automático" entra al túnel por el
+    // 853; sin RST el sistema tarda segundos en volver al 53 en texto plano.
+    const kotlin = readFileSync(
+      join(REPO_ROOT, ANDROID_MODULE, 'src/main/java/ar/com/novasolutions/novashield/DnsPacket.kt'),
+      'utf8',
+    );
+    const swift = readFileSync(
+      join(REPO_ROOT, 'apps/mobile/targets/dns-shield/DnsPacketParser.swift'),
+      'utf8',
+    );
+    expect(kotlin).toMatch(/destPort != 53 && destPort != 853/);
+    expect(swift).toMatch(/destPort == 53 \|\| destPort == 853/);
+    expect(swift).toMatch(/static func buildTcpRstForSyn/);
+  });
+
+  it('iOS relee el estado real del túnel al volver al frente', () => {
+    // El observer de NEVPNStatusDidChange solo recibe cambios con la app viva:
+    // si la extensión muere por memoria con la app cerrada, la clave del App
+    // Group queda en "active" para siempre.
+    const swift = readFileSync(
+      join(REPO_ROOT, 'apps/mobile/modules/nova-shield/ios/NovaShieldModule.swift'),
+      'utf8',
+    );
+    expect(swift).toMatch(/didBecomeActiveNotification/);
+    expect(swift).toMatch(/loadAllFromPreferences/);
+  });
+
   it('no usa Notification.Builder con canal (existe recién en API 26 y minSdk es 24)', () => {
     // `Notification.Builder(Context, String)` se agregó en Android 8. En un
     // teléfono con Android 7 —que son justo los que más nos importan, gente con

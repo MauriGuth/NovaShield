@@ -200,6 +200,9 @@ class NovaShieldModule : Module(), ShieldBus.Listener {
   }
 
   private fun currentStatus(): String = when {
+    // Prendido pero esquivado por el DNS privado del sistema: no protege, y
+    // decirlo es la diferencia entre un aviso útil y una tranquilidad falsa.
+    DnsShieldVpnService.isRunning && DnsShieldVpnService.isBypassed -> "bypassed"
     DnsShieldVpnService.isRunning -> "active"
     VpnService.prepare(context) != null -> "needs_permission"
     else -> "inactive"

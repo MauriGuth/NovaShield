@@ -12,6 +12,7 @@ import android.net.Network
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.system.OsConstants
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import java.io.FileInputStream
@@ -80,6 +81,20 @@ class DnsShieldVpnService : VpnService() {
     @Volatile
     var isRunning: Boolean = false
       private set
+
+    /**
+     * El DNS privado del sistema está en modo "hostname" (Ajustes → Red e
+     * internet → DNS privado con un servidor fijo): las consultas salen
+     * cifradas por el 853 hacia una IP que el túnel no rutea, y el escudo queda
+     * mirando una interfaz vacía. El modo "Automático" NO es problema: el
+     * sistema prueba TLS contra el DNS del túnel, no le contestamos, y vuelve
+     * solo al 53 en texto plano.
+     */
+    @Volatile
+    var isBypassed: Boolean = false
+      private set
+
+    private const val BYPASS_NOTIFICATION_ID = 1002
   }
 
   private var tunnel: ParcelFileDescriptor? = null
@@ -88,9 +103,22 @@ class DnsShieldVpnService : VpnService() {
   private var forwarders: ExecutorService? = null
   private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
-  /** DNS reales del sistema, en el orden en que se les asignó alias. */
+  /** DNS reales del sistema (solo IPv4), en el orden en que se les asignó alias. */
   @Volatile
   private var upstreamServers: List<InetAddress> = emptyList()
+
+  /**
+   * TODOS los DNS de la red (v4 y v6) con los que se armó el túnel. Es la
+   * clave para saber si la red cambió: comparar solo los IPv4 dejaba pasar el
+   * caso "la red nueva no tiene IPv4" y el túnel seguía apuntando a los
+   * resolvers del WiFi anterior, con cada consulta tardando 4 s en fallar.
+   */
+  @Volatile
+  private var lastSeenDns: List<InetAddress> = emptyList()
+
+  /** La red no expuso ningún DNS IPv4 y se está usando el resolver de fallback. */
+  @Volatile
+  private var upstreamIsFallback = false
   private val writeLock = Any()
 
   // Contadores de diagnóstico. Sobreviven a rebuildTunnel() a propósito: el
@@ -118,8 +146,17 @@ class DnsShieldVpnService : VpnService() {
     return START_STICKY
   }
 
+  /**
+   * @param networkDns DNS de la red que disparó el (re)armado. Se pasa desde
+   *   el callback de red porque `activeNetwork` puede ir un paso atrás de
+   *   `onLinkPropertiesChanged`; null = leerlos de la red activa.
+   * @param privateDnsStrict si el sistema tiene DNS privado con hostname fijo.
+   */
   @Synchronized
-  private fun startShield() {
+  private fun startShield(
+    networkDns: List<InetAddress>? = null,
+    privateDnsStrict: Boolean? = null,
+  ) {
     if (running.get()) return
 
     // Android 14 valida el foregroundServiceType contra la categoría de la app
@@ -144,7 +181,16 @@ class DnsShieldVpnService : VpnService() {
       return
     }
 
-    upstreamServers = systemDnsServers()
+    val props = activeLinkProperties()
+    val dns = networkDns ?: props?.dnsServers.orEmpty()
+    lastSeenDns = dns
+    val v4 = dns.filterIsInstance<Inet4Address>()
+    upstreamIsFallback = v4.isEmpty()
+    // Solo IPv4: los alias del túnel se asignan sobre un prefijo IPv4. Si la
+    // red no expone ninguno, el fallback también filtra (Quad9).
+    upstreamServers = v4.ifEmpty { listOf(InetAddress.getByName(FALLBACK_DNS)) }
+    val strict = privateDnsStrict ?: isPrivateDnsStrict(props)
+
     val builder = Builder().setSession("Nova Shield")
 
     var prefix: String? = null
@@ -174,6 +220,14 @@ class DnsShieldVpnService : VpnService() {
       builder
         // La propia app queda afuera: sus llamadas al backend no pasan por acá.
         .addDisallowedApplication(packageName)
+        // Sin esto, Android BLOQUEA todo el tráfico IPv6 del teléfono mientras
+        // el túnel está activo: la documentación de VpnService.Builder dice que
+        // si la VPN no agrega dirección, ruta ni DNS de una familia, todo lo
+        // saliente de esa familia se descarta. El túnel solo tiene IPv4, así
+        // que con esta línea el IPv6 pasa por fuera, intacto. El DNS sigue
+        // entrando igual: los únicos DNS de la interfaz son los alias IPv4 y
+        // el resolver del sistema no usa otros mientras la VPN está activa.
+        .allowFamily(OsConstants.AF_INET6)
         .setBlocking(true)
         .setMtu(1500)
         .establish()
@@ -198,7 +252,7 @@ class DnsShieldVpnService : VpnService() {
     running.set(true)
     isRunning = true
     ShieldBus.clearError(this)
-    ShieldBus.publishStatus("active")
+    applyBypass(strict, notify = true)
     publishDiagnostics()
 
     forwarders = Executors.newFixedThreadPool(FORWARD_THREADS)
@@ -221,7 +275,7 @@ class DnsShieldVpnService : VpnService() {
     stopSelf()
   }
 
-  /** Foto de los contadores para que la app la muestre. Solo números. */
+  /** Foto de los contadores para que la app la muestre. Solo números y booleanos. */
   private fun publishDiagnostics() {
     ShieldBus.publishDiagnostics(
       this,
@@ -229,20 +283,86 @@ class DnsShieldVpnService : VpnService() {
       queriesParsed,
       blockedInSession,
       Blocklist.domainCount,
+      upstreamIsFallback = upstreamIsFallback,
+      privateDnsStrict = isBypassed,
     )
   }
 
-  /** DNS configurados en la red activa. Si no hay ninguno, se usa el fallback. */
-  private fun systemDnsServers(): List<InetAddress> {
+  private fun activeLinkProperties(): LinkProperties? {
     val manager = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-    val servers = manager?.activeNetwork
-      ?.let { manager.getLinkProperties(it) }
-      ?.dnsServers
-      // Solo IPv4: los alias del túnel se asignan sobre un prefijo IPv4.
-      ?.filterIsInstance<Inet4Address>()
-      ?: emptyList()
+    return manager?.activeNetwork?.let { manager.getLinkProperties(it) }
+  }
 
-    return servers.ifEmpty { listOf(InetAddress.getByName(FALLBACK_DNS)) }
+  /**
+   * Solo el modo "hostname" esquiva el túnel. `isPrivateDnsActive` da true
+   * también en "Automático", donde NO hay problema: pedirle al usuario que
+   * cambie un ajuste que está bien sería un falso positivo.
+   */
+  private fun isPrivateDnsStrict(props: LinkProperties?): Boolean {
+    if (props == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return false
+    return props.privateDnsServerName != null
+  }
+
+  /**
+   * Publica el estado real: "bypassed" cuando el DNS privado esquiva el túnel,
+   * "active" si no. Un escudo que reporta "activo" mientras no ve una sola
+   * consulta es exactamente el fail-open que el proyecto prohíbe.
+   */
+  private fun applyBypass(strict: Boolean, notify: Boolean) {
+    val wasBypassed = isBypassed
+    isBypassed = strict
+    ShieldBus.publishStatus(if (strict) "bypassed" else "active")
+    if (strict && !wasBypassed && notify) notifyBypass()
+    if (!strict && wasBypassed) {
+      (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+        .cancel(BYPASS_NOTIFICATION_ID)
+    }
+  }
+
+  private fun notifyBypass() {
+    val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    ensureBlockChannel(manager)
+    val openApp = packageManager.getLaunchIntentForPackage(packageName)?.let {
+      PendingIntent.getActivity(
+        this,
+        2,
+        it,
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+      )
+    }
+    val notification = NotificationCompat.Builder(this, BLOCK_CHANNEL_ID)
+      .setContentTitle("El escudo está prendido, pero tu DNS privado lo esquiva")
+      .setContentText("Ponelo en Automático: Ajustes → Red e internet → DNS privado.")
+      .setStyle(
+        NotificationCompat.BigTextStyle().bigText(
+          "Tu teléfono tiene un DNS privado con servidor fijo y manda las " +
+            "consultas cifradas por fuera del escudo, así que no podemos " +
+            "frenar nada. Para arreglarlo: Ajustes → Red e internet → DNS " +
+            "privado → Automático.",
+        ),
+      )
+      .setSmallIcon(android.R.drawable.stat_sys_warning)
+      .setPriority(NotificationCompat.PRIORITY_HIGH)
+      .setAutoCancel(true)
+      .apply { openApp?.let { setContentIntent(it) } }
+      .build()
+    manager.notify(BYPASS_NOTIFICATION_ID, notification)
+  }
+
+  private fun ensureBlockChannel(manager: NotificationManager) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      manager.createNotificationChannel(
+        NotificationChannel(
+          BLOCK_CHANNEL_ID,
+          "Sitios bloqueados",
+          // HIGH: es la explicación de por qué la página no cargó. Si llega
+          // callada, el usuario igual concluye que se quedó sin internet.
+          NotificationManager.IMPORTANCE_HIGH,
+        ).apply {
+          description = "Aviso cuando el escudo frena un sitio de estafa."
+        },
+      )
+    }
   }
 
   /**
@@ -258,10 +378,18 @@ class DnsShieldVpnService : VpnService() {
 
     val callback = object : ConnectivityManager.NetworkCallback() {
       override fun onLinkPropertiesChanged(network: Network, props: LinkProperties) {
-        val fresh = props.dnsServers.filterIsInstance<Inet4Address>()
-        if (fresh.isNotEmpty() && fresh != upstreamServers) {
+        // Este callback ve la red REAL (WiFi/4G), no la interfaz del túnel: la
+        // propia app está excluida de la VPN con addDisallowedApplication.
+        val strict = isPrivateDnsStrict(props)
+        val fresh = props.dnsServers
+        if (fresh != lastSeenDns) {
+          // Se rearma aunque la lista venga vacía o solo con IPv6: en ese caso
+          // el túnel pasa a usar el fallback y lo dice en el diagnóstico.
           Log.i(TAG, "Cambio de DNS de la red: rearmando el túnel")
-          rebuildTunnel()
+          rebuildTunnel(fresh, strict)
+        } else if (strict != isBypassed && running.get()) {
+          applyBypass(strict, notify = true)
+          publishDiagnostics()
         }
       }
     }
@@ -280,9 +408,9 @@ class DnsShieldVpnService : VpnService() {
     runCatching { manager?.unregisterNetworkCallback(callback) }
   }
 
-  /** Baja solo el plano de datos (túnel + hilos) y vuelve a armarlo. */
+  /** Baja solo el plano de datos (túnel + hilos) y vuelve a armarlo con la red nueva. */
   @Synchronized
-  private fun rebuildTunnel() {
+  private fun rebuildTunnel(networkDns: List<InetAddress>, privateDnsStrict: Boolean) {
     if (!running.getAndSet(false)) return
 
     forwarders?.shutdownNow()
@@ -292,7 +420,7 @@ class DnsShieldVpnService : VpnService() {
     runCatching { tunnel?.close() }
     tunnel = null
 
-    startShield()
+    startShield(networkDns, privateDnsStrict)
   }
 
   /** Bucle principal: lee consultas del túnel y las resuelve o bloquea. */
@@ -401,10 +529,16 @@ class DnsShieldVpnService : VpnService() {
     }
   }
 
+  /**
+   * @param finalStatus lo que se publica al terminar. `onRevoke` pasa
+   *   "preempted": antes publicaba "preempted" y acto seguido este método lo
+   *   pisaba con "inactive", así que la app nunca veía que otra VPN lo tiró.
+   */
   @Synchronized
-  private fun stopShield() {
+  private fun stopShield(finalStatus: String = "inactive") {
     running.set(false)
     isRunning = false
+    isBypassed = false
     unwatchNetworkChanges()
 
     forwarders?.shutdownNow()
@@ -415,7 +549,7 @@ class DnsShieldVpnService : VpnService() {
     worker = null
     runCatching { tunnel?.close() }
     tunnel = null
-    ShieldBus.publishStatus("inactive")
+    ShieldBus.publishStatus(finalStatus)
 
     stopForegroundCompat()
     stopSelf()
@@ -432,14 +566,14 @@ class DnsShieldVpnService : VpnService() {
 
   /** El sistema avisa así que el usuario revocó el permiso o activó otra VPN. */
   override fun onRevoke() {
-    ShieldBus.publishStatus("preempted")
-    stopShield()
+    stopShield(finalStatus = "preempted")
     super.onRevoke()
   }
 
   override fun onDestroy() {
     running.set(false)
     isRunning = false
+    isBypassed = false
     unwatchNetworkChanges()
     forwarders?.shutdownNow()
     runCatching { tunnel?.close() }
@@ -505,20 +639,7 @@ class DnsShieldVpnService : VpnService() {
     lastNotifyAt = now
 
     val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      manager.createNotificationChannel(
-        NotificationChannel(
-          BLOCK_CHANNEL_ID,
-          "Sitios bloqueados",
-          // HIGH: es la explicación de por qué la página no cargó. Si llega
-          // callada, el usuario igual concluye que se quedó sin internet.
-          NotificationManager.IMPORTANCE_HIGH,
-        ).apply {
-          description = "Aviso cuando el escudo frena un sitio de estafa."
-        },
-      )
-    }
+    ensureBlockChannel(manager)
 
     val openApp = packageManager.getLaunchIntentForPackage(packageName)?.let {
       PendingIntent.getActivity(
