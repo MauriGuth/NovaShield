@@ -70,6 +70,57 @@ export const KNOWN_SHORTENERS = new Set([
 ]);
 
 /**
+ * Parámetros donde los redirectores públicos llevan el destino real. El SMS
+ * bancario típico de 2025-26 se manda así: "google.com/url?q=https://…" o
+ * "l.facebook.com/l.php?u=…". El host visible es intachable y las listas
+ * nunca ven el destino. Se extrae SIN ningún fetch: es solo leer la query.
+ */
+const REDIRECT_PARAMS = [
+  'url', 'u', 'q', 'redirect', 'redirect_uri', 'redirect_url', 'dest',
+  'destination', 'target', 'link', 'goto', 'next', 'continue', 'return',
+  'r', 'to', 'href', 'out',
+];
+
+/**
+ * URL absoluta escondida en la query de `url`, o null si no hay ninguna.
+ * Acepta hasta dos capas de percent-encoding y base64 solo cuando decodifica
+ * a un https?:// limpio (nada de "adivinar" que un texto cualquiera es URL).
+ */
+export function extractEmbeddedUrl(url: URL): URL | null {
+  for (const name of REDIRECT_PARAMS) {
+    const raw = url.searchParams.get(name);
+    if (!raw) continue;
+    const found = decodeEmbedded(raw);
+    // Un redirector que se apunta a sí mismo no esconde nada.
+    if (found && found.hostname !== url.hostname) return found;
+  }
+  return null;
+}
+
+function decodeEmbedded(raw: string): URL | null {
+  let value = raw.trim();
+  for (let round = 0; round < 3; round++) {
+    if (/^https?:\/\//i.test(value)) return safeParse(value);
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(value);
+    } catch {
+      break;
+    }
+    if (decoded === value) break;
+    value = decoded;
+  }
+  if (/^[A-Za-z0-9+/=_-]{12,}$/.test(raw)) {
+    const text = Buffer.from(
+      raw.replace(/-/g, '+').replace(/_/g, '/'),
+      'base64',
+    ).toString('utf8');
+    if (/^https?:\/\/\S+$/i.test(text)) return safeParse(text);
+  }
+  return null;
+}
+
+/**
  * Extrae la primera URL del texto que el usuario pegó o compartió.
  * Acepta mensajes completos ("Ganaste! entrá a bit.ly/x") y devuelve la URL
  * con esquema, o null si no hay nada con forma de link.

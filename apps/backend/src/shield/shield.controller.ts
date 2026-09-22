@@ -6,11 +6,19 @@ import {
   Res,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import type { BlocklistMetadata } from '@novashield/shared';
 import { ShieldService } from './shield.service';
 
+/**
+ * Cupo propio, más alto que el del escáner: cada sync son dos requests
+ * (metadata + lista) y muchas personas comparten una IP detrás del CGNAT de
+ * las operadoras. No se exime del throttle del todo: acota el egress de
+ * 1,3 MB por request ante un cliente roto o malicioso.
+ */
 @Controller('shield')
+@Throttle({ default: { ttl: 60_000, limit: 120 } })
 export class ShieldController {
   constructor(private readonly shield: ShieldService) {}
 

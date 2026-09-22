@@ -155,3 +155,46 @@ describe('matchScamPatterns · no dispara con mensajes normales', () => {
     ).not.toContain('CREDENTIAL_REQUEST');
   });
 });
+
+/**
+ * Cuatro modalidades que salían con tarjeta VERDE (medido contra el backend en
+ * producción) y el bug del "$": `\b\$` nunca matchea después de un espacio,
+ * así que "Ganaste $50.000" daba 0. Son las de mayor daño a personas mayores.
+ */
+describe('modalidades que antes salían en verde', () => {
+  const codes = (text: string) =>
+    matchScamPatterns(text).reasons.map((r) => r.code);
+
+  it.each([
+    ['Ganaste $50.000 en Mercado Pago, reclamalo acá', 'PRIZE_BAIT'],
+    ['Felicitaciones! Reclamá tu premio antes de las 24hs', 'PRIZE_BAIT'],
+    ['Ganás $80.000 por día desde tu casa, sin experiencia', 'FAKE_JOB'],
+    ['Hola pa! cambié de número, este es el nuevo. Necesito una transferencia urgente', 'FAMILY_IMPERSONATION'],
+    ['Banco Galicia: registramos un consumo de $85.000 que no reconocés? Comunicate al 0800-333-1234', 'VISHING_CALLBACK'],
+    ['Detectamos una compra en el exterior. Si no fuiste vos, llamá ya al 0810-999-0000', 'VISHING_CALLBACK'],
+    ['Tenemos a tu hijo, no cortes ni llames a la policía. Necesitamos $500.000 ya', 'VIRTUAL_KIDNAPPING'],
+    ['Escuchá bien: agarramos a tu nieta. El rescate son 2000 dólares, transferí ahora', 'VIRTUAL_KIDNAPPING'],
+    ['Préstamo preaprobado de $300.000. Para liberarlo abonás el seguro de $12.000 y se acredita en el día', 'LOAN_ADVANCE_FEE'],
+    ['Tu crédito está aprobado, solo pagás el sellado y desbloqueás el desembolso', 'LOAN_ADVANCE_FEE'],
+    ['Tengo tus fotos íntimas y las voy a mandar a todos tus contactos si no depositás en bitcoin', 'EXTORTION'],
+    ['I have recorded you through your webcam. Pay 500 USD in bitcoin or I send it to your contacts', 'EXTORTION'],
+    ['Si no pagás la deuda hoy, mandamos tu foto y tus datos a toda tu familia y tus contactos', 'EXTORTION'],
+  ])('detecta: %s', (text, code) => {
+    expect(codes(text)).toContain(code);
+  });
+
+  it.each([
+    'transferime lo del asado cuando puedas',
+    'no cortes el pasto todavía que va a llover',
+    'mañana te mando las fotos del viaje',
+    'el préstamo del auto ya se acreditó, gracias!',
+    'ganaste! te debo un helado',
+    'compré las entradas, después me pasás tu parte',
+    'tenemos a la nena en casa el finde, venís?',
+  ])('no marca: %s', (text) => {
+    const found = codes(text);
+    for (const code of ['VISHING_CALLBACK', 'VIRTUAL_KIDNAPPING', 'LOAN_ADVANCE_FEE', 'EXTORTION']) {
+      expect(found).not.toContain(code);
+    }
+  });
+});

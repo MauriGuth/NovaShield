@@ -12,6 +12,11 @@ import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { VERDICT_UI } from '@/lib/verdict-ui';
 
+/** Host de una URL sin depender de `new URL()`, que en Hermes es parcial. */
+function hostOf(href: string): string {
+  return href.replace(/^https?:\/\//i, '').split(/[/?#]/)[0];
+}
+
 /** Lista de razones educativas, compartida entre las dos tarjetas. */
 function ReasonList({ reasons }: { reasons: AnalysisReason[] }) {
   const theme = useTheme();
@@ -76,6 +81,11 @@ export function VerdictCard({ result }: { result: AnalyzeResponse }) {
         {wasRedirected && (
           <ThemedText type="small" themeColor="textSecondary">
             El enlace redirige a: {result.finalUrl}
+          </ThemedText>
+        )}
+        {result.embeddedUrl && (
+          <ThemedText type="small" themeColor="textSecondary">
+            Lleva en realidad a: {hostOf(result.embeddedUrl)}
           </ThemedText>
         )}
         <ThemedText type="small">{ui.advice}</ThemedText>

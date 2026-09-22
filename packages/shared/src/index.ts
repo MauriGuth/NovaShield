@@ -45,6 +45,11 @@ export interface AnalyzeResponse {
   /** URL final después de expandir acortadores/redirecciones en el servidor. */
   finalUrl: string;
   domain: string;
+  /**
+   * Destino real cuando el enlace era un redirector (google.com/url?q=…,
+   * l.facebook.com/l.php?u=…): la URL que hay que mirar de verdad.
+   */
+  embeddedUrl?: string;
   reasons: AnalysisReason[];
   /** Qué capas llegaron a evaluar este enlace (las capas 2 y 3b dependen de configuración). */
   checkedLayers: Record<AnalysisLayer, boolean>;
@@ -75,3 +80,4 @@ export function verdictFromScore(score: number, conclusive: boolean): VerdictLev
   if (score >= RISK_THRESHOLDS.suspicious) return 'suspicious';
   return conclusive ? 'safe' : 'unknown';
 }
+export * from './brands';

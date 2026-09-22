@@ -1,4 +1,5 @@
 import {
+  extractEmbeddedUrl,
   extractUrl,
   extractUrls,
   normalizeForLookup,
@@ -166,4 +167,52 @@ describe('isPrivateIp', () => {
       expect(isPrivateIp(ip)).toBe(false);
     },
   );
+});
+
+/**
+ * Redirectores públicos: el SMS bancario típico esconde el phishing en la
+ * query de google.com/url o l.facebook.com. Antes el host visible daba 0.
+ */
+describe('extractEmbeddedUrl', () => {
+  it('saca el destino de google.com/url?q=', () => {
+    const url = new URL(
+      'https://www.google.com/url?q=https://mercadopago-ingreso.top/login&sa=D',
+    );
+    expect(extractEmbeddedUrl(url)?.hostname).toBe('mercadopago-ingreso.top');
+  });
+
+  it('saca el destino de l.facebook.com/l.php?u= (percent-encoded)', () => {
+    const url = new URL(
+      'https://l.facebook.com/l.php?u=https%3A%2F%2Fbbva-token.com%2Fv&h=AT0',
+    );
+    expect(extractEmbeddedUrl(url)?.hostname).toBe('bbva-token.com');
+  });
+
+  it('aguanta doble encoding', () => {
+    const url = new URL(
+      'https://redirector.example/go?url=https%253A%252F%252Fevil.example%252Fx',
+    );
+    expect(extractEmbeddedUrl(url)?.hostname).toBe('evil.example');
+  });
+
+  it('acepta base64 solo si decodifica a una URL limpia', () => {
+    const b64 = Buffer.from('https://evil.example/login').toString('base64');
+    expect(
+      extractEmbeddedUrl(new URL(`https://t.example/r?target=${b64}`))?.hostname,
+    ).toBe('evil.example');
+    const junk = Buffer.from('hola que tal como andas').toString('base64');
+    expect(extractEmbeddedUrl(new URL(`https://t.example/r?target=${junk}`))).toBeNull();
+  });
+
+  it('ignora una búsqueda de Google: q= sin URL no es un redirect', () => {
+    expect(
+      extractEmbeddedUrl(new URL('https://www.google.com/search?q=banco+galicia')),
+    ).toBeNull();
+  });
+
+  it('ignora un redirect al mismo host', () => {
+    expect(
+      extractEmbeddedUrl(new URL('https://a.example/x?next=https://a.example/y')),
+    ).toBeNull();
+  });
 });

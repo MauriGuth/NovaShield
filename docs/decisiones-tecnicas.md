@@ -217,6 +217,25 @@ Y dos correcciones propias de la plataforma:
 
 Lo que el compilado local NO cubre y solo dirá el teléfono: si Android 14 acepta `foregroundServiceType="systemExempted"` para esta app, si `establish()` levanta el túnel con los alias por DNS, si el `NotificationListenerService` recibe el contenido de WhatsApp, y si el consumo de batería del pool de reenvío es aceptable.
 
+## Bugs del roadmap de protección, bloque 1 (22-09-2026)
+
+Un panel de 41 agentes (mapa del código por subsistema → propuestas desde cuatro ángulos → verificación adversarial de cada una → síntesis y crítica) produjo el roadmap de protección. Antes de cualquier feature nueva salieron a arreglar los **bugs en lo que ya existía**, en particular los que hacían que la app dijera que protegía cuando no. Este bloque es lo que no necesita hardware (backend y JS); lo nativo (IPv6 en el túnel, rearmado al cambiar de red, detección real del DNS privado, estado vivo en iOS) espera la prueba en un Android real.
+
+| Bug | Arreglo |
+|---|---|
+| Sin `trust proxy`, todos los usuarios detrás de Railway compartían un cupo de 30 req/min; el 429 salía en inglés | `trust proxy` = 1; cupos con nombre (60 escáner, 120 lista, 5 familia, health exento); mensaje en rioplatense; la app lee `Retry-After` y la sync hace backoff |
+| `\b\$` nunca matchea tras un espacio ("Ganaste $50.000" daba 0); el punto de miles cortaba las oraciones; vishing con 0800, secuestro virtual, préstamo con seguro adelantado y sextorsión salían en verde | `(?:^|\s)\$`; `normalizeText` borra el punto entre dígitos; cuatro patrones nuevos con consejo propio y tests positivos y negativos |
+| 20 marcas, tokens cortos solo por etiqueta exacta (`bancomacro.com`, `ansesbonos.com` daban 0) y, al revés, `bancogalicia.com.ar` salía "sospechoso" con razón crítica que la IA no puede bajar | Tabla de ~80 marcas en `packages/shared/src/brands.ts` con dominios oficiales completos, regla de contexto para tokens `exact`, TLD excluido del matching, corpus negativo de 42 dominios en el spec |
+| `google.com/url?q=…` y `l.facebook.com/l.php?u=…` no se extraían: host intachable, phishing en la query | `extractEmbeddedUrl` sin fetch; listas, heurísticas y Web Risk sobre el destino real; `embeddedUrl` en la respuesta y "Lleva en realidad a:" en la tarjeta |
+| Un PhishTank en mantenimiento (200 con HTML) parseaba 0 URLs y pisaba el último dump bueno con `isReady` en true | `validateSourceLoad`: cero entradas nunca; menos de la mitad se rechaza salvo tres veces seguidas; cabecera del CSV y banner de las listas verificados |
+| La lista del escudo se refrescaba cada 7 días y solo al abrir Protección | 24 h, desde el arranque y cada vuelta al frente, con backoff tras falla |
+| Inicio y el Score decían "Escudo activo · +30" leyendo un flag guardado, aunque el túnel hubiera muerto | Estado vivo del módulo nativo; el flag pasa a ser intención y sirve para decir "lo tenías prendido y quedó apagado" |
+| El permiso de notificaciones solo se pedía al activar el escudo: quien activaba mensajes sin escudo se quedaba sin avisos en Android 13+ | Se pide también al activar la Protección de Mensajes |
+
+Verificado en vivo contra un backend local: 62 pedidos desde una IP reciben 429 con `Retry-After: 60` mientras otra IP sigue con cupo (el `trust proxy` funciona), health no se throttlea, el redirect embebido nombra el destino y detecta la marca, y las cuatro modalidades nuevas dan veredicto.
+
+Lo que este bloque NO arregla y sigue abierto: el túnel de Android bloquea todo el IPv6 del teléfono (`allowFamily`), deja los DNS viejos al pasar de WiFi a 4G, la detección de DNS privado es código muerto, y en iOS el estado del túnel queda pegado si la extensión muere. Son Kotlin y Swift: van después de la prueba en hardware.
+
 ## Riesgos activos
 
 1. Cuenta Apple individual no puede publicar el escudo DNS → enrolar Organization ya.

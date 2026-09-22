@@ -35,7 +35,11 @@ interface ShieldState {
   dismissAlert: (id: string) => void;
 
   // — Escudo DNS —
-  /** Se guarda para saber si el usuario ya lo activó alguna vez. */
+  /**
+   * INTENCIÓN del usuario (lo prendió y no lo apagó), no el estado real. El
+   * estado real lo da `getShieldStatus()` del módulo nativo en cada lectura;
+   * este flag solo sirve para distinguir "nunca lo prendió" de "quedó caído".
+   */
   shieldEnabled: boolean;
   blocklistVersion: string | null;
   blocklistDomainCount: number;
@@ -239,7 +243,15 @@ export interface ScoreBreakdown {
 export function computeScore(state: {
   scansCount: number;
   alerts: StoredAlert[];
+  /**
+   * Estado VIVO del escudo (lo dice el módulo nativo ahora), no la intención
+   * guardada. Los +30 se dan solo si está bloqueando de verdad: sumarlos por
+   * el flag persistido dejaba el Score en verde después de un reinicio con el
+   * escudo caído, que es exactamente el fail-open que el proyecto prohíbe.
+   */
   shieldEnabled?: boolean;
+  /** El usuario lo prendió alguna vez y no lo apagó: si no está activo, algo lo tiró. */
+  shieldWanted?: boolean;
   messageProtectionEnabled?: boolean;
   deviceScan?: DeviceScanResult | null;
 }): ScoreBreakdown {
@@ -248,6 +260,10 @@ export function computeScore(state: {
 
   if (state.shieldEnabled) {
     score += 30;
+  } else if (state.shieldWanted) {
+    pendingActions.push(
+      'El Escudo DNS quedó apagado (un reinicio, otra VPN o el sistema lo cerró). Entrá a Protección y volvé a prenderlo.',
+    );
   } else {
     pendingActions.push(
       'Activá el Escudo DNS: bloquea los sitios de estafa en todas tus apps, sin que hagas nada.',

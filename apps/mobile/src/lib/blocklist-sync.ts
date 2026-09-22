@@ -2,14 +2,21 @@ import { HASH_BYTES, type BlocklistMetadata } from '@novashield/shared';
 import { File, Paths } from 'expo-file-system';
 import { API_URL } from './api';
 import { NovaShield } from './native-shield';
+import { useShield as useShieldStore } from './store';
 
 /**
  * Sincronización de la lista de bloqueo del Escudo DNS.
  *
  * La lista se descarga entera (~1,3 MB) y se guarda en el dispositivo; el
  * matching de cada consulta DNS lo hace el módulo nativo contra ese archivo,
- * sin red. Por eso la sincronización es semanal por defecto: bajar 1,3 MB por
- * día sería inaceptable con datos móviles en Argentina.
+ * sin red.
+ *
+ * El chequeo es diario y corre al arrancar la app y al volver al frente
+ * (`runBlocklistSync` desde _layout.tsx). Era semanal y solo se disparaba al
+ * abrir la pestaña Protección: un dominio que HaGeZi sumaba el martes no le
+ * llegaba nunca a quien no volvía a esa pestaña, con el escudo diciendo
+ * "activo · 170.000 dominios". El chequeo diario cuesta ~200 bytes cuando la
+ * lista no cambió (ETag + 304); la descarga completa solo ocurre si cambió.
  *
  * TODO (Fase 2.1): descarga incremental. El servidor ya versiona la lista;
  * falta servir el diff contra una versión previa para bajar unos KB en vez de
@@ -17,7 +24,10 @@ import { NovaShield } from './native-shield';
  */
 
 const FILE_NAME = 'blocklist.bin';
-const SYNC_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+const SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000;
+/** Tras una falla no se reintenta en cada vuelta al frente: eso es martillar al backend. */
+const RETRY_BACKOFF_MS = 15 * 60 * 1000;
+let retryNotBefore = 0;
 
 export interface SyncResult {
   /**
@@ -62,6 +72,9 @@ export async function syncBlocklist(
   if (!NovaShield) {
     return { status: 'skipped', error: 'El escudo no está disponible en este build.' };
   }
+  if (!options.force && Date.now() < retryNotBefore) {
+    return { status: 'skipped', version: state.version ?? undefined };
+  }
   if (!options.force && !isSyncDue(state)) {
     // El intervalo no venció, pero el proceso pudo haberse reiniciado con el
     // store diciendo "sincronizado recién": si el nativo quedó sin lista en
@@ -82,9 +95,27 @@ export async function syncBlocklist(
   let metadata: BlocklistMetadata;
   try {
     const res = await fetch(`${API_URL}/v1/shield/metadata`);
+    if (res.status === 429 || res.status === 503) {
+      // 429: demasiadas consultas desde esta IP (compartida con miles de
+      // personas detrás del CGNAT de la operadora). 503: el servidor todavía
+      // está cargando las fuentes. En los dos casos hay que esperar, y el
+      // servidor dice cuánto.
+      const wait = Number(res.headers.get('Retry-After'));
+      retryNotBefore =
+        Date.now() +
+        (Number.isFinite(wait) && wait > 0 ? wait * 1000 : RETRY_BACKOFF_MS);
+      return {
+        status: 'failed',
+        error:
+          res.status === 429
+            ? 'Demasiadas consultas seguidas al servidor. Lo reintentamos solos en unos minutos; la lista actual sigue activa.'
+            : 'El servidor todavía está preparando la lista. Lo reintentamos solos en unos minutos; la lista actual sigue activa.',
+      };
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     metadata = (await res.json()) as BlocklistMetadata;
   } catch (err) {
+    retryNotBefore = Date.now() + RETRY_BACKOFF_MS;
     return { status: 'failed', error: `No pudimos consultar la lista: ${err}` };
   }
 
@@ -155,4 +186,36 @@ export async function syncBlocklist(
   } catch (err) {
     return { status: 'failed', error: `No pudimos actualizar la lista: ${err}` };
   }
+}
+
+/**
+ * Sincroniza leyendo y actualizando el store. Es el único punto que registra
+ * el chequeo: lo usan la pantalla Protección (botón "Actualizar ahora"), el
+ * hook del escudo y el arranque de la app.
+ *
+ * Solo `updated`/`up-to-date` son chequeos reales contra el servidor.
+ * Registrar un `skipped` como chequeo movería la fecha sin haber consultado
+ * nada y el refresco diario no se dispararía nunca.
+ */
+export async function runBlocklistSync(
+  options: { force?: boolean } = {},
+): Promise<SyncResult> {
+  const snapshot = useShieldStore.getState();
+  const result = await syncBlocklist(
+    {
+      version: snapshot.blocklistVersion,
+      lastCheckedAt: snapshot.blocklistCheckedAt,
+    },
+    options,
+  );
+  if (
+    (result.status === 'updated' || result.status === 'up-to-date') &&
+    result.version
+  ) {
+    snapshot.recordBlocklistSync({
+      version: result.version,
+      domainCount: result.domainCount ?? snapshot.blocklistDomainCount ?? 0,
+    });
+  }
+  return result;
 }

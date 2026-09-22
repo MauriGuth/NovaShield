@@ -39,6 +39,8 @@ const FETCH_TIMEOUT_MS = 60_000;
 export class BlocklistService implements OnModuleInit {
   private readonly logger = new Logger(BlocklistService.name);
   private readonly sources = new Map<string, SourceData>();
+  /** Descargas rechazadas seguidas por fuente (ver validateSourceLoad). */
+  private readonly rejectedInARow = new Map<string, number>();
 
   private combinedUrls = new Set<string>();
   private combinedDomains = new Set<string>();
@@ -115,6 +117,19 @@ export class BlocklistService implements OnModuleInit {
   ): Promise<void> {
     try {
       const data = await loader();
+      const rejected = this.rejectedInARow.get(name) ?? 0;
+      const check = validateSourceLoad(data, this.sources.get(name), rejected);
+      if (!check.accept) {
+        // Un 200 con HTML, un CSV truncado o una purga masiva NO pueden pisar
+        // el último dump bueno: un phishing que solo esta fuente conocía
+        // volvería "sin señales" con la capa 1 diciendo que sí revisó.
+        this.rejectedInARow.set(name, rejected + 1);
+        this.logger.warn(
+          `${name}: descarga rechazada (${check.reason}); se conserva el último dato bueno`,
+        );
+        return;
+      }
+      this.rejectedInARow.set(name, 0);
       this.sources.set(name, { ...data, loadedAt: new Date() });
       this.logger.log(
         `${name}: ${data.urls.size} URLs, ${data.domains.size} dominios`,
@@ -161,8 +176,14 @@ export class BlocklistService implements OnModuleInit {
 
   private async loadPhishTank() {
     const csv = await this.fetchText(PHISHTANK_URL);
-    const urls = new Set<string>();
     const lines = csv.split('\n');
+    // Cabecera real del dump: "phish_id,url,phish_detail_url,…". Una página de
+    // mantenimiento en HTML también responde 200, y parsearla da 0 URLs sin
+    // ningún error.
+    if (!/\bphish_id\b/.test(lines[0] ?? '') || !/\burl\b/.test(lines[0] ?? '')) {
+      throw new Error('la respuesta no es el CSV de PhishTank (cabecera inesperada)');
+    }
+    const urls = new Set<string>();
     for (let i = 1; i < lines.length; i++) {
       const fields = parseCsvLine(lines[i]);
       const raw = fields[1];
@@ -174,6 +195,7 @@ export class BlocklistService implements OnModuleInit {
 
   private async loadHageziTif() {
     const text = await this.fetchText(HAGEZI_TIF_MINI_URL);
+    assertBanner(text, 'HaGeZi');
     const domains = new Set<string>();
     for (const line of text.split('\n')) {
       const trimmed = line.trim().toLowerCase();
@@ -191,6 +213,7 @@ export class BlocklistService implements OnModuleInit {
     const text = await this.fetchText(URLHAUS_HOSTFILE_URL, {
       'Auth-Key': key,
     });
+    assertBanner(text, 'URLhaus');
     const domains = new Set<string>();
     for (const line of text.split('\n')) {
       const trimmed = line.trim();
@@ -201,6 +224,44 @@ export class BlocklistService implements OnModuleInit {
     }
     return { urls: new Set<string>(), domains };
   }
+}
+
+/** Los archivos de HaGeZi y URLhaus empiezan siempre con un banner comentado. */
+function assertBanner(text: string, source: string): void {
+  const first = text.split('\n').find((line) => line.trim().length > 0) ?? '';
+  if (!first.startsWith('#')) {
+    throw new Error(`la respuesta no parece la lista de ${source} (sin banner)`);
+  }
+}
+
+/**
+ * ¿Se acepta esta descarga como nuevo dato de la fuente?
+ *
+ * - Cero entradas: nunca. Es la firma de un 200 con HTML o un archivo vacío.
+ * - Menos de la mitad que la vez anterior: se rechaza, salvo que ya se haya
+ *   rechazado tres veces seguidas. PhishTank purga entradas legítimamente y
+ *   una fuente puede achicarse de verdad; tres refrescos (seis horas) de
+ *   consistencia alcanzan para creerle. Sin este escape, un achicamiento real
+ *   dejaría la fuente congelada para siempre.
+ */
+export function validateSourceLoad(
+  fresh: Pick<SourceData, 'urls' | 'domains'>,
+  previous: Pick<SourceData, 'urls' | 'domains'> | undefined,
+  rejectedInARow: number,
+): { accept: boolean; reason?: string } {
+  const total = fresh.urls.size + fresh.domains.size;
+  if (total === 0) return { accept: false, reason: 'sin entradas' };
+
+  if (previous) {
+    const before = previous.urls.size + previous.domains.size;
+    if (total < before * 0.5 && rejectedInARow < 3) {
+      return {
+        accept: false,
+        reason: `cayó de ${before} a ${total} entradas (menos de la mitad)`,
+      };
+    }
+  }
+  return { accept: true };
 }
 
 /**

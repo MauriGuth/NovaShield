@@ -30,10 +30,17 @@ export interface ScamPattern {
  * ni eñes —lo habitual en SMS— matchee igual.
  */
 export function normalizeText(text: string): string {
-  return text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, ''); // marcas diacríticas combinantes
+  return (
+    text
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // marcas diacríticas combinantes
+      // El punto de miles ("$300.000") se lee como fin de oración por todos los
+      // patrones que usan `[^.?]` como delimitador: "Préstamo de $300.000. Para
+      // liberarlo abonás el seguro" quedaba partido en tres y no matcheaba
+      // nada. Un punto ENTRE dígitos nunca termina una oración en español.
+      .replace(/(\d)\.(?=\d)/g, '$1')
+  );
 }
 
 /**
@@ -108,7 +115,9 @@ export const SCAM_PATTERNS: ScamPattern[] = [
     detail:
       'El clásico: alguien dice ser un familiar que cambió de número y enseguida pide plata o una transferencia. Antes de responder, llamá al número viejo de esa persona o preguntale algo que solo ella sepa.',
     patterns: [
-      /\b(hola)?\s*(pa|ma|papa|mama|papi|mami|hijo|hija|tio|tia|abuel)\b[^.!?]{0,60}\b(cambie|este es mi (nuevo )?numero|nuevo numero|se me rompio el (celu|telefono))/,
+      // `[^.?]` y no `[^.!?]`: "Hola pa! cambié de número" trae el "!" en el
+      // medio y con el delimitador viejo la oración se cortaba justo ahí.
+      /\b(hola)?\s*(pa|ma|papa|mama|papi|mami|hijo|hija|tio|tia|abuel)\b[^.?]{0,60}\b(cambie|este es mi (nuevo )?numero|nuevo numero|se me rompio el (celu|telefono))/,
       /\b(cambie|tengo)\b[^.!?]{0,25}\b(de )?numero\b[^.!?]{0,60}\b(necesito|urgente|transfer|plata|pagar|deposit)/,
       /\bsoy\b[^.!?]{0,20}\b(tu|su)\b[^.!?]{0,15}\b(hijo|hija|nieto|nieta|sobrin)\b[^.!?]{0,60}\b(numero|celu|whats)/,
     ],
@@ -160,8 +169,15 @@ export const SCAM_PATTERNS: ScamPattern[] = [
     detail:
       'Si no participaste de nada, no ganaste nada. Los premios, bonos y reintegros sorpresa son el anzuelo más viejo para que entregues tus datos.',
     patterns: [
-      /\b(ganaste|ganador|felicitaciones|felicidades)\b[^.!?]{0,60}\b(premio|sorteo|millon|\$|dinero|regalo|celular|iphone)/,
-      /\b(premio|sorteo|bono|reintegro|beneficio)\b[^.!?]{0,50}\b(reclam|retir|cobr|acredit|solicit)/,
+      // `(?:^|\s)\$` y no `\b\$`: entre un espacio y "$" no hay límite de
+      // palabra (ninguno de los dos es carácter de palabra), así que
+      // "Ganaste $50.000" NUNCA matcheaba. Ejecutado contra el código real
+      // daba 0. Sin lookbehind a propósito: el mismo regex tiene que servir
+      // después en Kotlin y Swift.
+      /\b(ganaste|ganador|felicitaciones|felicidades)\b[^.?]{0,60}(?:\b(?:premio|sorteo|millon|millones|dinero|regalo|celular|iphone|pesos)\b|(?:^|\s)\$)/,
+      /\b(premio|sorteo|bono|reintegro|beneficio)\b[^.?]{0,50}\b(reclam|retir|cobr|acredit|solicit)/,
+      // El verbo primero: "Reclamá tu premio".
+      /\b(reclam|retir|cobr|solicit)\w*\b[^.?]{0,40}\b(premio|sorteo|bono|reintegro)\b/,
       /\bfuiste seleccionad/,
     ],
   },
@@ -210,7 +226,71 @@ export const SCAM_PATTERNS: ScamPattern[] = [
       'Trabajos que prometen mucha plata por tareas simples desde el celular suelen terminar pidiéndote un depósito inicial o usándote para mover dinero robado.',
     patterns: [
       /\b(trabajo|empleo|puesto|vacante)\b[^.!?]{0,60}\b(desde casa|remoto|medio tiempo|sin experiencia|por dia|diarios|whatsapp)/,
-      /\bgana\b[^.!?]{0,25}\b(\$|pesos|usd|dolares)\b[^.!?]{0,30}\b(por dia|diarios|por hora|semanales)/,
+      /\bgan(a|as|ar)\b[^.!?]{0,25}(?:(?:^|\s)\$|\b(?:pesos|usd|dolares)\b)[^.!?]{0,30}\b(por dia|diarios|por hora|semanales|por semana)/,
+    ],
+  },
+  {
+    code: 'VISHING_CALLBACK',
+    points: 55,
+    severity: 'critical',
+    title: 'Te piden que llames a un número por un consumo que "no reconocés"',
+    detail:
+      'La estafa del "consumo no reconocido": te avisan de una compra que no hiciste y te dan un número para "cancelarla". Del otro lado atiende el estafador, que te pide el token o la clave. Si te preocupa, llamá al número del dorso de tu tarjeta, nunca al del mensaje.',
+    patterns: [
+      // El gancho: una operación que se supone que no hiciste.
+      /\b(consumo|compra|debito|ingreso|movimiento|transferencia|operacion|pago)\b[^.?]{0,100}\b(no (?:la |lo |el )?(?:reconoc|realiz|autoriz|fuiste)|desconoc)/,
+      // Operación + un número o un "comunicate": mira el mensaje entero porque
+      // casi siempre viene partido ("Compra de $85.000. Comunicate al 0800…").
+      /^(?=[\s\S]*\b(?:consumo|compra|debito|movimiento|transferencia|operacion)\b)(?=[\s\S]*\b(?:0800|0810|comunicate|comuniquese|llam(?:a|e|anos|ar|ame)|contactate|contactese)\b)/,
+    ],
+  },
+  {
+    code: 'VIRTUAL_KIDNAPPING',
+    // Llega solo a "peligro": el patrón exige dos señales juntas (un familiar
+    // retenido + rescate/no cortes) y el daño de un falso negativo es la
+    // transferencia de los ahorros en diez minutos de pánico.
+    points: 75,
+    severity: 'critical',
+    title: 'Posible "secuestro virtual"',
+    detail:
+      'Dicen tener a un familiar y exigen plata ya, sin dejarte cortar. Es mentira en la enorme mayoría de los casos: cortá, llamá directo a esa persona por el número de siempre, y si no la ubicás llamá al 911. No transfieras nada.',
+    patterns: [
+      /\b(tenemos|tengo|agarramos|secuestr\w*|nos llevamos)\b[^.?]{0,40}\b(?:a )?(?:tu|su|el|la) (hijo|hija|nieto|nieta|mama|papa|madre|padre|hermano|hermana|marido|mujer|esposa|esposo|familiar|sobrin\w*|abuel\w*)\b/,
+      // "no cortes" solo cuenta si hay un familiar, la policía o un rescate en
+      // el mensaje: "no cortes el pasto" no es un secuestro.
+      /^(?=[\s\S]*\b(?:no (?:cortes|corte|cuelgues|cuelgue)|no (?:llames|llame|avises|avise) a (?:la policia|nadie))\b)(?=[\s\S]*\b(?:hijo|hija|nieto|nieta|familiar|hermano|hermana|mama|papa|policia|rescate|plata|dolares|transfer\w*)\b)/,
+      /\brescate\b[^.?]{0,60}\b(transfer\w*|deposit\w*|plata|dolares|efectivo|pesos)\b/,
+    ],
+  },
+  {
+    code: 'LOAN_ADVANCE_FEE',
+    points: 55,
+    severity: 'critical',
+    title: 'Préstamo que pide plata por adelantado',
+    detail:
+      'Ningún préstamo real te pide que pagues un seguro, un sellado o una comisión ANTES de darte la plata. Ese pago es el objetivo de la estafa: una vez que lo hacés, el préstamo nunca llega.',
+    patterns: [
+      // El pago viene antes: "abonás el seguro para liberar el préstamo".
+      /\b(abon\w*|pag\w*|deposit\w*|transfer\w*)\b[^.?]{0,40}\b(seguro|gasto|comision|sellado|garantia|arancel)\b[^.?]{0,50}\b(prestamo|credito|desembolso|liberar|desbloquear|activar)/,
+      // O el préstamo viene antes: "préstamo aprobado, para liberarlo pagás el sellado".
+      /\b(prestamo|credito|desembolso)\b[^.?]{0,60}\b(abon\w*|pag\w*|deposit\w*|transfer\w*)\b[^.?]{0,40}\b(seguro|gasto|comision|sellado|garantia|arancel|para (?:liberar|desbloquear|activar))/,
+      // O primero el "para liberarlo": "Para liberarlo abonás el seguro".
+      /\b(liberar|desbloquear|activar)\w*\b[^.?]{0,40}\b(abon\w*|pag\w*|deposit\w*|transfer\w*)\b[^.?]{0,40}\b(seguro|gasto|comision|sellado|garantia|arancel)\b/,
+    ],
+  },
+  {
+    code: 'EXTORTION',
+    points: 75,
+    severity: 'critical',
+    title: 'Extorsión: amenazan con difundir algo tuyo',
+    detail:
+      'Amenazan con mandar fotos, videos o "tu deuda" a tus contactos si no pagás. Casi siempre es mentira, y pagar no lo frena: pide más. No respondas, no pagues, guardá capturas y denunciá. Si sos menor o le pasa a un menor, la Línea 137 atiende las 24 horas.',
+    patterns: [
+      // Amenaza de difusión a tus contactos + pedido de pago, en cualquier orden.
+      /^(?=[\s\S]*\b(?:public\w*|envi\w*|mand\w*|difund\w*|compart\w*|reenvi\w*|send|share)\b[^.?]{0,60}\b(?:contactos|familia|amigos|redes|conocidos|contacts|family|friends)\b)(?=[\s\S]*\b(?:bitcoin|btc|usdt|cripto|crypto|dolares|usd|pag(?:a|as|o|ar|ues|ue|uen|ando)|deuda|transfer\w*|deposit\w*|wallet|billetera)\b)/,
+      // Sextorsión, en español o en el inglés de las campañas masivas.
+      /\b(fotos|videos?|imagenes|grabacion|grabe|grabamos|te grabe|recorded)\b[^.?]{0,80}\b(intim\w*|desnud\w*|sexual\w*|masturb\w*|webcam|camara|porn\w*)/,
+      /\b(i have|we have)\b[^.?]{0,40}\b(recorded|video of you|your webcam|hacked your)\b/,
     ],
   },
   {

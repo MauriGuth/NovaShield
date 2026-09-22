@@ -341,6 +341,13 @@ export default function ProteccionScreen() {
             {canUseMessageGuard && Platform.OS !== 'ios' ? (
               <Pressable
                 onPress={async () => {
+                  // Sin permiso de notificaciones (Android 13+), el guard
+                  // detecta la estafa y el sistema descarta el aviso en
+                  // silencio. Se pedía solo al activar el escudo; quien activa
+                  // la revisión de mensajes sin el escudo se quedaba sin aviso.
+                  await NovaShield?.requestNotificationPermission?.().catch(
+                    () => false,
+                  );
                   await NovaShield?.openMessageProtectionSettings();
                   setMessagesEnabled(
                     NovaShield?.isMessageProtectionEnabled() ?? false,

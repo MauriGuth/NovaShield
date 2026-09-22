@@ -1,7 +1,7 @@
 import type { ShieldStatus } from '@novashield/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { AppState } from 'react-native';
-import { syncBlocklist, type SyncResult } from './blocklist-sync';
+import { runBlocklistSync, type SyncResult } from './blocklist-sync';
 import { NovaShield, getShieldStatus } from './native-shield';
 import { useShield as useShieldStore } from './store';
 
@@ -20,7 +20,6 @@ export function useShieldController() {
 
   const setShieldEnabled = useShieldStore((s) => s.setShieldEnabled);
   const recordBlockedDomain = useShieldStore((s) => s.recordBlockedDomain);
-  const recordBlocklistSync = useShieldStore((s) => s.recordBlocklistSync);
   const syncNativeBlocks = useShieldStore((s) => s.syncNativeBlocks);
 
   // Eventos del módulo nativo, más un refresco cada vez que la app vuelve al
@@ -66,38 +65,14 @@ export function useShieldController() {
     };
   }, [recordBlockedDomain, setShieldEnabled, syncNativeBlocks]);
 
-  const sync = useCallback(
-    async (options: { force?: boolean } = {}) => {
-      // El estado de sync se lee acá adentro y no con selectores del hook: si
-      // fuera dependencia del callback, cada `recordBlocklistSync` re-crearía
-      // `sync` y el efecto de montaje de la pantalla lo volvería a disparar,
-      // en loop.
-      const snapshot = useShieldStore.getState();
-      const result = await syncBlocklist(
-        {
-          version: snapshot.blocklistVersion,
-          lastCheckedAt: snapshot.blocklistCheckedAt,
-        },
-        options,
-      );
-      // Solo `updated`/`up-to-date` son chequeos reales contra el servidor.
-      // Registrar un `skipped` como chequeo movería la fecha sin haber
-      // consultado nada y el refresco semanal no se dispararía nunca.
-      if (
-        (result.status === 'updated' || result.status === 'up-to-date') &&
-        result.version
-      ) {
-        recordBlocklistSync({
-          version: result.version,
-          domainCount:
-            result.domainCount ?? snapshot.blocklistDomainCount ?? 0,
-        });
-      }
-      setLastSync(result);
-      return result;
-    },
-    [recordBlocklistSync],
-  );
+  const sync = useCallback(async (options: { force?: boolean } = {}) => {
+    // Sin dependencias del store a propósito: si `recordBlocklistSync` fuera
+    // dependencia, cada registro re-crearía `sync` y el efecto de montaje de
+    // la pantalla lo volvería a disparar, en loop.
+    const result = await runBlocklistSync(options);
+    setLastSync(result);
+    return result;
+  }, []);
 
   const enable = useCallback(async () => {
     if (!NovaShield || busy) return;

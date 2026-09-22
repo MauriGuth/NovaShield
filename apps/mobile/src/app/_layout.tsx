@@ -1,9 +1,10 @@
 import { DarkTheme, DefaultTheme, router, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
-import { useColorScheme } from 'react-native';
+import { AppState, useColorScheme } from 'react-native';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
+import { runBlocklistSync } from '@/lib/blocklist-sync';
 import { useSharedText } from '@/lib/use-shared-text';
 
 SplashScreen.preventAutoHideAsync();
@@ -21,6 +22,19 @@ export default function TabLayout() {
     router.navigate({ pathname: '/scanner', params: { shared: sharedText } });
     clearSharedText();
   }, [sharedText, clearSharedText]);
+
+  // La lista del escudo se chequea al arrancar y en cada vuelta al frente, no
+  // solo al abrir Protección: el escudo protege sobre todo a quien no vuelve a
+  // esa pestaña. `runBlocklistSync` decide solo si toca (24 h, backoff tras
+  // una falla, recarga desde disco si el proceso se reinició) y no hace nada
+  // en builds sin módulo nativo.
+  useEffect(() => {
+    void runBlocklistSync();
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') void runBlocklistSync();
+    });
+    return () => sub.remove();
+  }, []);
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>

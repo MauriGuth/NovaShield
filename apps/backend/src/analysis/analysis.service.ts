@@ -9,7 +9,12 @@ import { BlocklistService } from './layers/blocklist.service';
 import { HeuristicsService } from './layers/heuristics.service';
 import { LlmService } from './layers/llm.service';
 import { WebRiskService } from './layers/webrisk.service';
-import { expandUrl, extractUrl, KNOWN_SHORTENERS } from './url-utils';
+import {
+  expandUrl,
+  extractEmbeddedUrl,
+  extractUrl,
+  KNOWN_SHORTENERS,
+} from './url-utils';
 
 /**
  * Orquestador del motor de 3 capas (ver anteproyecto §04.2):
@@ -87,10 +92,46 @@ export class AnalysisService {
     reasons.push(...heur.reasons);
     score = Math.max(score, Math.min(heur.score, 80));
 
-    // Capa 2 · Web Risk (solo si no hay ya un veredicto malicioso de capa 1)
+    // Destino escondido en un redirector (google.com/url?q=…). Las listas y
+    // las heurísticas se aplican a ESE destino, que es el que la persona va a
+    // abrir; el host visible solo reenvía. Sin esto, el SMS bancario típico
+    // daba 0: host intachable, phishing en la query.
+    const embedded =
+      extractEmbeddedUrl(finalUrl) ?? extractEmbeddedUrl(submitted);
+    if (embedded) {
+      reasons.push({
+        code: 'EMBEDDED_REDIRECT',
+        layer: 'heuristics',
+        severity: 'warning',
+        title: 'El enlace reenvía a otro sitio',
+        detail: `${finalUrl.hostname} solo reenvía: el sitio al que te lleva de verdad es ${embedded.hostname}. Ese es el que hay que mirar.`,
+      });
+      score = Math.max(score, 20);
+
+      const embeddedHit = this.blocklists.lookup(embedded);
+      if (embeddedHit) {
+        score = Math.max(
+          score,
+          embeddedHit.kind === 'url' ? BLOCKLIST_URL_SCORE : BLOCKLIST_DOMAIN_SCORE,
+        );
+        reasons.push({
+          code: 'BLOCKLIST_HIT',
+          layer: 'blocklists',
+          severity: 'critical',
+          title: 'El destino real está reportado como sitio malicioso',
+          detail: `${embedded.hostname} figura en bases globales de phishing y malware (fuente: ${embeddedHit.source}). No lo abras ni cargues datos ahí.`,
+        });
+      }
+      const embeddedHeur = this.heuristics.analyze(embedded, false);
+      reasons.push(...embeddedHeur.reasons);
+      score = Math.max(score, Math.min(embeddedHeur.score, 80));
+    }
+
+    // Capa 2 · Web Risk (solo si no hay ya un veredicto malicioso de capa 1).
+    // Se consulta el destino real, no el redirector.
     let webRiskRan = false;
     if (deepAnalysis && this.webRisk.isEnabled && score < RISK_THRESHOLDS.malicious) {
-      const threats = await this.webRisk.check(finalUrl);
+      const threats = await this.webRisk.check(embedded ?? finalUrl);
       if (threats !== null) {
         webRiskRan = true;
         if (threats.length > 0) {
@@ -163,6 +204,7 @@ export class AnalysisService {
       submittedUrl: submitted.href,
       finalUrl: finalUrl.href,
       domain: finalUrl.hostname,
+      ...(embedded ? { embeddedUrl: embedded.href } : {}),
       reasons,
       checkedLayers: {
         blocklists: conclusive,

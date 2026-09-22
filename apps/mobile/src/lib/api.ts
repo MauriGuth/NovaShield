@@ -32,6 +32,29 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Convierte una respuesta de error en un ApiError con texto para mostrar.
+ * El backend ya manda los mensajes en rioplatense; el 429 se arma acá para
+ * decir cuántos segundos esperar (Retry-After), que es lo que la persona
+ * necesita saber.
+ */
+async function throwApiError(res: Response): Promise<never> {
+  const body = (await res.json().catch(() => null)) as {
+    message?: string | string[];
+  } | null;
+  let message = Array.isArray(body?.message) ? body.message[0] : body?.message;
+  if (res.status === 429) {
+    const wait = Number(res.headers.get('Retry-After'));
+    message = `Demasiadas consultas seguidas. Esperá ${
+      Number.isFinite(wait) && wait > 0 ? `${wait} segundos` : 'un momento'
+    } y probá de nuevo.`;
+  }
+  throw new ApiError(
+    message ?? 'El análisis falló. Probá de nuevo en unos segundos.',
+    res.status,
+  );
+}
+
 export async function analyzeUrl(
   text: string,
   signal?: AbortSignal,
@@ -59,18 +82,7 @@ export async function analyzeUrl(
     );
   }
 
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as {
-      message?: string | string[];
-    } | null;
-    const message = Array.isArray(body?.message)
-      ? body.message[0]
-      : body?.message;
-    throw new ApiError(
-      message ?? 'El análisis falló. Probá de nuevo en unos segundos.',
-      res.status,
-    );
-  }
+  if (!res.ok) await throwApiError(res);
 
   return (await res.json()) as AnalyzeResponse;
 }
@@ -95,16 +107,7 @@ export async function analyzeMessage(
     );
   }
 
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as {
-      message?: string | string[];
-    } | null;
-    const message = Array.isArray(body?.message) ? body.message[0] : body?.message;
-    throw new ApiError(
-      message ?? 'El análisis falló. Probá de nuevo en unos segundos.',
-      res.status,
-    );
-  }
+  if (!res.ok) await throwApiError(res);
 
   return (await res.json()) as AnalyzeMessageResponse;
 }

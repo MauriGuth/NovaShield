@@ -15,8 +15,17 @@ import { ShieldModule } from './shield/shield.module';
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
-    // Endpoint público: límite básico por IP hasta tener cuentas/autenticación.
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 30 }]),
+    // Endpoint público: límite por IP hasta tener cuentas/autenticación.
+    // Requiere `trust proxy` en main.ts para que la IP sea la del cliente y
+    // no la del proxy. 60/min es el techo del escáner; la descarga de la lista
+    // (más pesada pero menos frecuente) y la familia tienen el suyo en cada
+    // controller. El mensaje va en el idioma del usuario: la app lo muestra
+    // tal cual.
+    ThrottlerModule.forRoot({
+      throttlers: [{ ttl: 60_000, limit: 60 }],
+      errorMessage:
+        'Demasiadas consultas seguidas. Esperá un momento y probá de nuevo.',
+    }),
     TypeOrmModule.forRoot(buildDatabaseOptions()),
     AnalysisModule,
     MessagesModule,

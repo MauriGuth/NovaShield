@@ -7,7 +7,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { NovaShield } from '@/lib/native-shield';
+import type { ShieldStatus } from '@novashield/shared';
+import { getShieldStatus, NovaShield } from '@/lib/native-shield';
 import { computeScore, useShield } from '@/lib/store';
 import { VERDICT_UI } from '@/lib/verdict-ui';
 
@@ -23,16 +24,27 @@ export default function HomeScreen() {
   const theme = useTheme();
   const scansCount = useShield((s) => s.scansCount);
   const alerts = useShield((s) => s.alerts);
-  const shieldEnabled = useShield((s) => s.shieldEnabled);
+  const shieldWanted = useShield((s) => s.shieldEnabled);
   const totalBlocked = useShield((s) => s.totalBlocked);
   const deviceScan = useShield((s) => s.deviceScan);
   const family = useShield((s) => s.family);
   const messageProtectionEnabled =
     NovaShield?.isMessageProtectionEnabled() ?? false;
+
+  // El estado del escudo se lee del módulo nativo, no del flag persistido:
+  // después de un reinicio, un force-stop o el optimizador de batería, el
+  // flag seguía diciendo "activo" y esta pantalla —y el Score— lo repetían.
+  // Un escudo que dice proteger y no protege es peor que uno apagado visible.
+  const [shieldStatus, setShieldStatus] = useState<ShieldStatus>(() =>
+    getShieldStatus(),
+  );
+  const shieldActive = shieldStatus === 'active';
+
   const { score, pendingActions } = computeScore({
     scansCount,
     alerts,
-    shieldEnabled,
+    shieldEnabled: shieldActive,
+    shieldWanted,
     messageProtectionEnabled,
     deviceScan,
   });
@@ -44,10 +56,19 @@ export default function HomeScreen() {
   // que dos renders del mismo estado devuelvan cosas distintas).
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const sub = AppState.addEventListener('change', (next) => {
-      if (next === 'active') setNow(Date.now());
+    const statusSub = NovaShield?.addListener('onStatusChange', (event) => {
+      setShieldStatus(event.status);
     });
-    return () => sub.remove();
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') {
+        setNow(Date.now());
+        setShieldStatus(getShieldStatus());
+      }
+    });
+    return () => {
+      statusSub?.remove();
+      sub.remove();
+    };
   }, []);
 
   const deviceScanIsStale =
@@ -97,20 +118,28 @@ export default function HomeScreen() {
                     style={[
                       styles.shieldDot,
                       {
-                        backgroundColor: shieldEnabled
+                        backgroundColor: shieldActive
                           ? theme.accent
-                          : theme.textSecondary,
+                          : shieldWanted
+                            ? theme.warn
+                            : theme.textSecondary,
                       },
                     ]}
                   />
                   <ThemedText type="smallBold">
-                    {shieldEnabled ? 'Escudo DNS activo' : 'Escudo DNS apagado'}
+                    {shieldActive
+                      ? 'Escudo DNS activo'
+                      : shieldWanted
+                        ? 'Escudo DNS apagado — lo tenías prendido'
+                        : 'Escudo DNS apagado'}
                   </ThemedText>
                 </View>
                 <ThemedText type="small" themeColor="textSecondary">
-                  {shieldEnabled
+                  {shieldActive
                     ? `${totalBlocked} ${totalBlocked === 1 ? 'sitio bloqueado' : 'sitios bloqueados'} hasta ahora.`
-                    : 'Bloquea sitios de estafa en todas tus apps, sin que hagas nada.'}
+                    : shieldWanted
+                      ? 'Un reinicio, otra VPN o el sistema lo cerró. Tocá para volver a prenderlo.'
+                      : 'Bloquea sitios de estafa en todas tus apps, sin que hagas nada.'}
                 </ThemedText>
               </ThemedView>
             </Pressable>

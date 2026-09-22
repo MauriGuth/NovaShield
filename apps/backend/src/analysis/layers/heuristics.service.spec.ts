@@ -87,4 +87,84 @@ describe('HeuristicsService', () => {
     );
     expect(result.score).toBeLessThanOrEqual(100);
   });
+
+  /**
+   * Corpus de la ampliación de marcas (20 → ~80). El negativo importa tanto
+   * como el positivo: bancogalicia.com.ar salía "sospechoso" con una razón
+   * crítica que la IA no puede bajar, y la persona dejaba de creerle a la app
+   * justo sobre el link real de su banco.
+   */
+  it.each([
+    'https://bancoprovincia-homebanking.com/ingreso',
+    'https://modo-pagos.com/activar',
+    'https://bancomacro.com/token',
+    'https://ansesbonos.com/cobrar',
+    'https://ualaayuda.com/',
+    'https://cuentadni-app.com/',
+    'https://galiciaonline.net/clave',
+    'https://bna-clientes.com/',
+    'https://hsbc-token.com/',
+    'https://personal-pay-verificacion.com/',
+    'https://apple-id-bloqueado.com/',
+    'https://instagram-derechos-autor.com/apelar',
+    'https://google-verificacion.com/',
+    'https://nacion-online.com/',
+    'https://pami-turnos.com/',
+    'https://correoargentino-envios.top/',
+    'https://microsoft-soporte.com/',
+  ])('marca imitación en %s', (url) => {
+    expect(analyze(url).reasons.map((r) => r.code)).toContain(
+      'BRAND_IMPERSONATION',
+    );
+  });
+
+  it.each([
+    // Oficiales que antes salían "sospechoso".
+    'https://www.bancogalicia.com.ar/',
+    'https://www.santanderrio.com.ar/',
+    'https://www.mercadopago.com.uy/',
+    'https://hb.bna.com.ar/',
+    'https://www.macro.com.ar/',
+    'https://www.bancoprovincia.com.ar/',
+    'https://www.provincianet.com.ar/',
+    'https://www.cuentadni.com.ar/',
+    'https://www.modo.com.ar/',
+    'https://www.uala.com.ar/',
+    'https://www.personal.com.ar/',
+    'https://www.movistar.com.ar/',
+    'https://www.claro.com.ar/',
+    'https://www.pami.org.ar/',
+    'https://www.anses.gob.ar/',
+    'https://www.arca.gob.ar/',
+    'https://www.argentina.gob.ar/',
+    'https://www.google.com.ar/',
+    'https://accounts.google.com/',
+    'https://www.apple.com/',
+    'https://www.icloud.com/',
+    'https://outlook.live.com/',
+    'https://www.amazon.com/',
+    'https://www.instagram.com/',
+    'https://www.netflix.com/ar/',
+    // Medios, otras empresas y palabras comunes que contienen una marca.
+    'https://www.lanacion.com.ar/',
+    'https://www.clarin.com/',
+    'https://www.infobae.com/',
+    'https://www.marca.com/',
+    'https://www.macrotrends.net/',
+    'https://www.comodo.com/',
+    'https://www.lemonde.fr/',
+    'https://www.patagonia.com/',
+    'https://blog.google/',
+    'https://www.applesfera.com/',
+    'https://www.amazonia.org/',
+    'https://www.personalidad.org/',
+    'https://www.naranjas-frescas.com/',
+    'https://www.claroquesi.com/',
+    'https://www.galiciaturismo.gal/',
+    'https://www.microsoftware.io/',
+  ])('no marca imitación en %s', (url) => {
+    expect(analyze(url).reasons.map((r) => r.code)).not.toContain(
+      'BRAND_IMPERSONATION',
+    );
+  });
 });

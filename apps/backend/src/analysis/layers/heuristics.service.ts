@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import type { AnalysisReason } from '@novashield/shared';
+import {
+  BRAND_CONTEXT_WORDS,
+  BRANDS,
+  type AnalysisReason,
+  type Brand,
+} from '@novashield/shared';
 import { KNOWN_SHORTENERS, parentDomains } from '../url-utils';
 
 /**
@@ -17,30 +22,6 @@ export interface HeuristicsResult {
   reasons: AnalysisReason[];
 }
 
-/** Marcas más suplantadas en estafas argentinas y sus dominios oficiales. */
-const BRANDS: Array<{ token: string; label: string; official: string[] }> = [
-  { token: 'mercadopago', label: 'Mercado Pago', official: ['mercadopago.com', 'mercadopago.com.ar'] },
-  { token: 'mercadolibre', label: 'Mercado Libre', official: ['mercadolibre.com', 'mercadolibre.com.ar'] },
-  { token: 'arca', label: 'ARCA', official: ['arca.gob.ar', 'afip.gob.ar'] },
-  { token: 'afip', label: 'AFIP/ARCA', official: ['afip.gob.ar', 'arca.gob.ar'] },
-  { token: 'anses', label: 'ANSES', official: ['anses.gob.ar'] },
-  { token: 'miargentina', label: 'Mi Argentina', official: ['argentina.gob.ar'] },
-  { token: 'galicia', label: 'Banco Galicia', official: ['galicia.ar', 'bancogalicia.com'] },
-  { token: 'santander', label: 'Santander', official: ['santander.com.ar', 'santander.com'] },
-  { token: 'bbva', label: 'BBVA', official: ['bbva.com.ar', 'bbva.com'] },
-  { token: 'macro', label: 'Banco Macro', official: ['macro.com.ar' ] },
-  { token: 'banconacion', label: 'Banco Nación', official: ['bna.com.ar'] },
-  { token: 'uala', label: 'Ualá', official: ['uala.com.ar', 'uala.com'] },
-  { token: 'brubank', label: 'Brubank', official: ['brubank.com'] },
-  { token: 'naranjax', label: 'Naranja X', official: ['naranjax.com'] },
-  { token: 'whatsapp', label: 'WhatsApp', official: ['whatsapp.com', 'wa.me', 'whatsapp.net'] },
-  { token: 'correoargentino', label: 'Correo Argentino', official: ['correoargentino.com.ar'] },
-  { token: 'andreani', label: 'Andreani', official: ['andreani.com'] },
-  { token: 'edesur', label: 'Edesur', official: ['edesur.com.ar'] },
-  { token: 'edenor', label: 'Edenor', official: ['edenor.com.ar'] },
-  { token: 'netflix', label: 'Netflix', official: ['netflix.com'] },
-];
-
 /** TLDs con alta proporción de abuso y costo casi nulo de registro. */
 const SUSPICIOUS_TLDS = new Set([
   'zip', 'top', 'icu', 'click', 'rest', 'gq', 'tk', 'ml', 'cf', 'ga',
@@ -54,21 +35,38 @@ const URGENCY_KEYWORDS = [
 ];
 
 /**
- * ¿La etiqueta de dominio `label` imita a `token`?
+ * ¿La etiqueta de dominio `label` imita a la marca?
  *
- * - Token largo (≥6): una colisión casual es implausible, así que alcanza con
- *   que aparezca como subcadena de la etiqueta desenmascarada
- *   (mercadopagoarg, mercadopag0, mercadopago-seguridad → todos matchean).
- * - Token corto (≤5, como "arca", "macro", "bbva"): se exige que sea una
- *   etiqueta o un segmento separado por guiones completo, no un fragmento de
- *   una palabra más larga — así "marca.com", "macrotrends.com" y "comarca.com"
- *   no disparan un falso positivo.
+ * - Token largo sin `exact`: alcanza con que aparezca como subcadena de la
+ *   etiqueta desenmascarada (mercadopagoarg, mercadopag0, mercadopago-seguridad).
+ * - Token `exact` (o corto, ≤5): tiene que ser una etiqueta o un segmento
+ *   completo ("modo-pagos"), o venir PEGADO a una palabra de contexto bancario
+ *   ("ansesbonos", "bancomacro", "ualaayuda", "galiciaonline"). Así
+ *   lanacion.com.ar, comodo.com, patagonia.com y personalidad.com quedan
+ *   afuera, y bancomacro.com o ansesbonos.com adentro.
  */
-function labelImitatesToken(label: string, token: string): boolean {
+function labelImitatesBrand(label: string, brand: Brand): boolean {
   const compact = unmask(label.replace(/-/g, ''));
-  if (token.length >= 6) return compact.includes(token);
   const segments = label.split('-').map(unmask);
-  return compact === token || segments.includes(token);
+  const { token } = brand;
+
+  if (compact === token || segments.includes(token)) return true;
+  if (!brand.exact && token.length >= 6) return compact.includes(token);
+  return segments.some((segment) => attachedToContext(segment, token));
+}
+
+function attachedToContext(segment: string, token: string): boolean {
+  if (segment.length <= token.length) return false;
+  if (segment.startsWith(token)) return isContextWord(segment.slice(token.length));
+  if (segment.endsWith(token)) {
+    return isContextWord(segment.slice(0, segment.length - token.length));
+  }
+  return false;
+}
+
+function isContextWord(word: string): boolean {
+  if (BRAND_CONTEXT_WORDS.has(word)) return true;
+  return word.endsWith('s') && BRAND_CONTEXT_WORDS.has(word.slice(0, -1));
 }
 
 /** Sustituciones típicas de caracteres parecidos para camuflar una marca. */
@@ -216,14 +214,17 @@ export class HeuristicsService {
     // la marca como una etiqueta (o combinada con separadores) — p. ej.
     // "mercadopago-premios.top" o "mercadopag0.com" —, no como fragmento de
     // una palabra más larga y no relacionada.
-    const labels = host.split('.');
+    // La última etiqueta (el TLD) queda afuera: un TLD de marca (.google,
+    // .bbva, .apple) solo puede tenerlo la marca, así que "blog.google" es de
+    // Google y no una imitación.
+    const labels = host.split('.').slice(0, -1);
     for (const brand of BRANDS) {
       const isOfficial = brand.official.some((official) =>
         parentDomains(host).includes(official),
       );
       if (isOfficial) continue;
 
-      const matches = labels.some((label) => labelImitatesToken(label, brand.token));
+      const matches = labels.some((label) => labelImitatesBrand(label, brand));
       if (matches) return brand;
     }
     return null;

@@ -1,9 +1,13 @@
 import { Controller, Get } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import type { HealthResponse } from '@novashield/shared';
 import { BlocklistService } from '../analysis/layers/blocklist.service';
 import { LlmService } from '../analysis/layers/llm.service';
 import { WebRiskService } from '../analysis/layers/webrisk.service';
 
+// El healthcheck de Railway y el monitoreo no compiten con los usuarios por
+// el cupo, ni pueden quedar bloqueados por él.
+@SkipThrottle()
 @Controller('health')
 export class HealthController {
   constructor(

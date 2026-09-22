@@ -56,6 +56,38 @@ describe('AnalysisService', () => {
     expect(result.reasons[0].code).toBe('BLOCKLIST_HIT');
   });
 
+  /**
+   * Redirectores públicos (google.com/url?q=, l.facebook.com/l.php?u=): el
+   * host visible es intachable y el phishing viaja en la query. Antes daba 0.
+   */
+  it('redirect embebido en lista negra → malicious, nombrando el destino real', async () => {
+    blocklists.lookup.mockImplementation((url: URL) =>
+      url.hostname === 'mercadopago-ingreso.top'
+        ? { source: 'hagezi-tif', kind: 'domain' }
+        : null,
+    );
+    const result = await service.analyze(
+      'https://www.google.com/url?q=https://mercadopago-ingreso.top/login&sa=D',
+    );
+    expect(result.verdict).toBe('malicious');
+    expect(result.embeddedUrl).toBe('https://mercadopago-ingreso.top/login');
+    const codes = result.reasons.map((r) => r.code);
+    expect(codes).toContain('EMBEDDED_REDIRECT');
+    expect(codes).toContain('BLOCKLIST_HIT');
+    // Google no es el problema: el dominio visible sigue siendo el redirector.
+    expect(result.domain).toBe('www.google.com');
+  });
+
+  it('las heurísticas también corren sobre el destino embebido', async () => {
+    const result = await service.analyze(
+      'https://l.facebook.com/l.php?u=https%3A%2F%2Fbbva-token.top%2Fv&h=AT0',
+    );
+    const codes = result.reasons.map((r) => r.code);
+    expect(codes).toContain('EMBEDDED_REDIRECT');
+    expect(codes).toContain('BRAND_IMPERSONATION');
+    expect(result.verdict).not.toBe('safe');
+  });
+
   it('hit de Web Risk eleva a malicious', async () => {
     webRisk.isEnabled = true;
     webRisk.check.mockResolvedValue(['SOCIAL_ENGINEERING']);

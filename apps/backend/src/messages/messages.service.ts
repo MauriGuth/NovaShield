@@ -11,7 +11,7 @@ import { AnalysisService } from '../analysis/analysis.service';
 import { BlocklistService } from '../analysis/layers/blocklist.service';
 import { HeuristicsService } from '../analysis/layers/heuristics.service';
 import { LlmService } from '../analysis/layers/llm.service';
-import { extractUrls } from '../analysis/url-utils';
+import { extractEmbeddedUrl, extractUrls } from '../analysis/url-utils';
 import { matchScamPatterns } from './scam-patterns';
 
 /**
@@ -185,8 +185,15 @@ export class MessagesService {
    * completo.
    */
   private localRisk(url: URL): number {
+    // El destino real de un redirector pesa igual que el link visible: si no,
+    // el ranking descartaría justo el "google.com/url?q=phishing" del mensaje.
+    const embedded = extractEmbeddedUrl(url);
     if (this.blocklists.lookup(url)) return 1000;
-    return this.heuristics.analyze(url, false).score;
+    if (embedded && this.blocklists.lookup(embedded)) return 1000;
+    return Math.max(
+      this.heuristics.analyze(url, false).score,
+      embedded ? this.heuristics.analyze(embedded, false).score : 0,
+    );
   }
 }
 
@@ -202,6 +209,18 @@ export function buildAdvice(
 
   if (codes.has('WHATSAPP_CODE_REQUEST')) {
     return 'No pases el código por ningún motivo. Si ya lo enviaste, entrá YA a WhatsApp y volvé a registrar tu número; después avisale a tus contactos.';
+  }
+  if (codes.has('VIRTUAL_KIDNAPPING')) {
+    return 'Cortá. Llamá directo a esa persona por el número de siempre; si no la ubicás, llamá al 911. No transfieras nada: en la enorme mayoría de los casos es mentira.';
+  }
+  if (codes.has('EXTORTION')) {
+    return 'No respondas ni pagues: pagar no lo frena, pide más. Guardá capturas y denunciá. Si hay un menor involucrado, la Línea 137 atiende las 24 horas.';
+  }
+  if (codes.has('VISHING_CALLBACK')) {
+    return 'No llames al número del mensaje. Si te preocupa el consumo, llamá al número que figura en el dorso de tu tarjeta o entrá a la app oficial del banco.';
+  }
+  if (codes.has('LOAN_ADVANCE_FEE')) {
+    return 'No pagues nada por adelantado: ningún préstamo real cobra un seguro o un sellado antes de darte la plata. Ese pago es la estafa.';
   }
   if (codes.has('FAMILY_IMPERSONATION') || codes.has('TRANSFER_REQUEST')) {
     return 'No transfieras nada todavía. Llamá a esa persona al número que ya tenías guardado y confirmá con ella antes de mover un peso.';
