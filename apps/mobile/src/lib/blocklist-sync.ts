@@ -68,12 +68,21 @@ function blocklistFile(): File {
 }
 
 /**
- * Primera línea del error, sin la traza nativa: la pantalla la muestra tal
- * cual, y veinte líneas de Java no le dicen nada a nadie.
+ * El error sin la traza nativa: la pantalla lo muestra tal cual, y veinte
+ * líneas de Java no le dicen nada a nadie. Pero la CAUSA sí se conserva: Expo
+ * rechaza con "Call to function 'X' has been rejected." en la primera línea y
+ * el motivo real en "→ Caused by: …" más abajo. Quedarse solo con la primera
+ * línea escondía justo lo que hacía falta para diagnosticar.
  */
-function firstLine(err: unknown): string {
+export function describeError(err: unknown): string {
   const text = err instanceof Error ? err.message : String(err);
-  return text.split('\n')[0].trim();
+  const lines = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith('at '));
+  const cause = lines.find((line) => /caused by:/i.test(line));
+  if (cause) return cause.replace(/^.*caused by:\s*/i, '');
+  return lines[0] ?? text;
 }
 
 export function isSyncDue(state: SyncState, now = Date.now()): boolean {
@@ -194,7 +203,12 @@ export async function syncBlocklist(
     }
 
     if (target.exists) target.delete();
-    temp.move(target);
+    // `move` devuelve una promesa (la versión instantánea es `moveSync`). Sin
+    // el await, en Android el nativo buscaba la lista antes de que el archivo
+    // llegara a su lugar y `loadBlocklist` se rechazaba con "No existe la
+    // lista": el escudo no se podía prender. En iOS el orden salía bien de
+    // casualidad.
+    await temp.move(target);
 
     const domainCount = await NovaShield.loadBlocklist(
       target.uri,
@@ -209,10 +223,13 @@ export async function syncBlocklist(
   } catch (err) {
     return {
       status: 'failed',
-      error: `No pudimos guardar la lista en el teléfono. Detalle: ${firstLine(err)}`,
+      error: `No pudimos guardar la lista en el teléfono. Detalle: ${describeError(err)}`,
     };
   }
 }
+
+/** Cola de sincronizaciones (ver runBlocklistSync). */
+let queue: Promise<unknown> = Promise.resolve();
 
 /**
  * Sincroniza leyendo y actualizando el store. Es el único punto que registra
@@ -223,9 +240,25 @@ export async function syncBlocklist(
  * Registrar un `skipped` como chequeo movería la fecha sin haber consultado
  * nada y el refresco diario no se dispararía nunca.
  */
-export async function runBlocklistSync(
+export function runBlocklistSync(
   options: { force?: boolean } = {},
 ): Promise<SyncResult> {
+  // Una sincronización a la vez. La disparan el arranque de la app, cada
+  // vuelta al frente (y volver del diálogo de permiso de VPN o de
+  // notificaciones CUENTA como vuelta al frente), la pantalla Protección y el
+  // switch del escudo. Corriendo en paralelo compartían `blocklist.bin` y su
+  // temporal: una borraba el archivo mientras otra se lo pasaba al nativo, y
+  // `loadBlocklist` se rechazaba aunque la descarga hubiera salido bien. Así
+  // se vio en el primer Android real. En cola, la segunda lee el store ya
+  // actualizado y en general ni sale a la red.
+  const run = queue.then(() => runBlocklistSyncNow(options));
+  queue = run.catch(() => undefined);
+  return run;
+}
+
+async function runBlocklistSyncNow(options: {
+  force?: boolean;
+}): Promise<SyncResult> {
   const snapshot = useShieldStore.getState();
   const result = await syncBlocklist(
     {

@@ -1,6 +1,7 @@
 package ar.com.novasolutions.novashield
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
 import java.io.File
 import java.security.MessageDigest
@@ -49,8 +50,11 @@ object Blocklist {
    */
   @Synchronized
   fun load(context: Context, path: String, version: String): Int {
-    val file = File(path.removePrefix("file://"))
-    if (!file.exists()) throw IllegalArgumentException("No existe la lista en $path")
+    // La app manda la `uri` de expo-file-system (`file:///…`, con posibles
+    // %XX); los servicios, la ruta plana guardada en prefs. Uri.parse cubre
+    // `file:/` y `file:///` y decodifica; sacarle el prefijo a mano no.
+    val file = if (path.startsWith("file:")) File(Uri.parse(path).path ?: path) else File(path)
+    if (!file.exists()) throw IllegalArgumentException("No existe la lista en ${file.absolutePath}")
 
     val bytes = file.readBytes()
     require(bytes.size % HASH_BYTES == 0) {
