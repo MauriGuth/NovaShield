@@ -48,11 +48,32 @@ export interface SyncState {
   lastCheckedAt: number | null;
 }
 
+/**
+ * La API de archivos de Expo quiere URIs (`file:///…`), y el nativo devuelve
+ * rutas planas (`/data/user/0/…/files`). iOS acepta la ruta plana; Android
+ * revienta con "URI is not absolute" y la lista no se descarga NUNCA, así que
+ * el escudo no se puede prender. Las rutas las arma el sistema (paquete y App
+ * Group, solo ASCII sin espacios): no hace falta codificarlas, y el nativo le
+ * saca el `file://` al recibirlas en `loadBlocklist`.
+ */
+export function toFileUri(path: string): string {
+  return path.startsWith('file://') ? path : `file://${path}`;
+}
+
 /** Directorio donde vive la lista: el nativo manda, porque en iOS debe ser el App Group. */
 function blocklistFile(): File {
   const dir = NovaShield?.getBlocklistDirectory();
-  if (dir) return new File(dir, FILE_NAME);
+  if (dir) return new File(toFileUri(dir), FILE_NAME);
   return new File(Paths.document, FILE_NAME);
+}
+
+/**
+ * Primera línea del error, sin la traza nativa: la pantalla la muestra tal
+ * cual, y veinte líneas de Java no le dicen nada a nadie.
+ */
+function firstLine(err: unknown): string {
+  const text = err instanceof Error ? err.message : String(err);
+  return text.split('\n')[0].trim();
 }
 
 export function isSyncDue(state: SyncState, now = Date.now()): boolean {
@@ -72,23 +93,25 @@ export async function syncBlocklist(
   if (!NovaShield) {
     return { status: 'skipped', error: 'El escudo no está disponible en este build.' };
   }
+  // El proceso pudo haberse reiniciado con la lista en disco y el nativo sin
+  // nada en memoria. Se recarga localmente (sin red) ANTES de mirar intervalos
+  // y esperas: si no, tras una falla de red el escudo no se podía prender
+  // durante el backoff aunque la lista buena estuviera ahí.
+  if (state.version && NovaShield.getLoadedDomainCount() === 0) {
+    const onDisk = blocklistFile();
+    if (onDisk.exists) {
+      try {
+        await NovaShield.loadBlocklist(onDisk.uri, state.version);
+      } catch {
+        // Archivo ilegible: que la próxima sincronización lo re-descargue.
+      }
+    }
+  }
+
   if (!options.force && Date.now() < retryNotBefore) {
     return { status: 'skipped', version: state.version ?? undefined };
   }
   if (!options.force && !isSyncDue(state)) {
-    // El intervalo no venció, pero el proceso pudo haberse reiniciado con el
-    // store diciendo "sincronizado recién": si el nativo quedó sin lista en
-    // memoria y el archivo está en disco, se recarga localmente (sin red).
-    if (state.version && NovaShield.getLoadedDomainCount() === 0) {
-      const target = blocklistFile();
-      if (target.exists) {
-        try {
-          await NovaShield.loadBlocklist(target.uri, state.version);
-        } catch {
-          // Archivo ilegible: que la próxima sincronización lo re-descargue.
-        }
-      }
-    }
     return { status: 'skipped', version: state.version ?? undefined };
   }
 
@@ -184,7 +207,10 @@ export async function syncBlocklist(
       sizeBytes: metadata.sizeBytes,
     };
   } catch (err) {
-    return { status: 'failed', error: `No pudimos actualizar la lista: ${err}` };
+    return {
+      status: 'failed',
+      error: `No pudimos guardar la lista en el teléfono. Detalle: ${firstLine(err)}`,
+    };
   }
 }
 

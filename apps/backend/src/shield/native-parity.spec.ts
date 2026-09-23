@@ -178,6 +178,24 @@ describe('módulo Android · trampas que solo aparecen al compilar', () => {
     expect(swift).toMatch(/static func buildTcpRstForSyn/);
   });
 
+  it('la carpeta de la lista que da el nativo se pasa a Expo como URI file://', () => {
+    // Android devuelve `filesDir.absolutePath` (ruta plana) y expo-file-system
+    // arma `java.io.File(URI.create(...))`: con una ruta plana revienta con
+    // "URI is not absolute", la lista no se descarga nunca y el escudo no se
+    // puede prender. iOS acepta la ruta plana, así que en el iPhone no se ve.
+    const kotlin = readFileSync(
+      join(REPO_ROOT, ANDROID_MODULE, 'src/main/java/ar/com/novasolutions/novashield/NovaShieldModule.kt'),
+      'utf8',
+    );
+    const sync = readFileSync(
+      join(REPO_ROOT, 'apps/mobile/src/lib/blocklist-sync.ts'),
+      'utf8',
+    );
+    expect(kotlin).toMatch(/filesDir\.absolutePath/);
+    expect(sync).toMatch(/new File\(toFileUri\(dir\), FILE_NAME\)/);
+    expect(sync).not.toMatch(/new File\(dir,/);
+  });
+
   it('iOS relee el estado real del túnel al volver al frente', () => {
     // El observer de NEVPNStatusDidChange solo recibe cambios con la app viva:
     // si la extensión muere por memoria con la app cerrada, la clave del App

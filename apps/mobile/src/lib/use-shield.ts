@@ -81,7 +81,20 @@ export function useShieldController() {
     try {
       // La lista tiene que estar cargada ANTES de levantar el túnel: si no, el
       // escudo dejaría pasar todo durante los primeros segundos.
-      await sync();
+      const synced = await sync();
+
+      // Sin lista el servicio se niega a arrancar (bien: nunca fail-open), pero
+      // el rechazo llegaba como "Call to function 'NovaShield.start' has been
+      // rejected" después de pedir el permiso de VPN para nada. Se corta acá,
+      // antes de molestar con permisos, y se dice por qué en castellano.
+      if (NovaShield.getLoadedDomainCount() === 0) {
+        setError(
+          `Todavía no pudimos bajar la lista de sitios peligrosos, y sin ella el escudo no frenaría nada. Revisá tu conexión y probá de nuevo.${
+            synced.error ? ` (${synced.error})` : ''
+          }`,
+        );
+        return;
+      }
 
       // Se pide junto con el escudo y no en el arranque de la app: acá el
       // usuario ya entendió para qué sirve, así que el permiso tiene sentido.
