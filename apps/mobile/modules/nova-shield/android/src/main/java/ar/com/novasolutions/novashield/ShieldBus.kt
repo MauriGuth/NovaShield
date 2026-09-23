@@ -41,6 +41,7 @@ object ShieldBus {
   private const val KEY_DIAG_AT = "diagAt"
   private const val KEY_DIAG_FALLBACK = "diagUpstreamIsFallback"
   private const val KEY_DIAG_PRIVATE_DNS = "diagPrivateDnsStrict"
+  private const val KEY_TEST_HITS = "diagTestHits"
 
   /** Igual que en iOS: alcanza para la lista de "últimos bloqueos" de la app. */
   private const val MAX_RECENT = 50
@@ -188,6 +189,19 @@ object ShieldBus {
       "upstreamIsFallback" to prefs.getBoolean(KEY_DIAG_FALLBACK, false),
       // DNS privado con hostname fijo: las consultas esquivan el túnel.
       "privateDnsStrict" to prefs.getBoolean(KEY_DIAG_PRIVATE_DNS, false),
+      // Consultas de la prueba del escudo que llegaron al túnel.
+      "testHits" to prefs.getInt(KEY_TEST_HITS, 0),
     )
+  }
+
+  /**
+   * Cuenta una consulta de la prueba del escudo. Va aparte de los bloqueos:
+   * la prueba no es un sitio peligroso y no puede inflar el "te protegimos".
+   * `commit()` y no `apply()`: la app lee el contador enseguida para decidir
+   * si la prueba pasó, y tiene que estar escrito cuando lo mire.
+   */
+  fun recordTestHit(context: Context) {
+    val prefs = prefs(context)
+    prefs.edit().putInt(KEY_TEST_HITS, prefs.getInt(KEY_TEST_HITS, 0) + 1).commit()
   }
 }

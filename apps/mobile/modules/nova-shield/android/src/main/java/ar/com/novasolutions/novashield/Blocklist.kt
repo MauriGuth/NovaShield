@@ -97,6 +97,19 @@ object Blocklist {
     }
   }
 
+  /** Espejo de SHIELD_TEST_DOMAIN en packages/shared/src/shield.ts. */
+  const val TEST_DOMAIN = "prueba-escudo.novashield.test"
+
+  /**
+   * ¿Es la consulta de la prueba del escudo? Se reconoce por nombre, no por la
+   * lista: la lista lleva solo dominios maliciosos, y la prueba tiene que
+   * funcionar aunque la lista sea vieja.
+   */
+  fun isTestDomain(host: String): Boolean {
+    val canonical = canonicalDomain(host)
+    return canonical == TEST_DOMAIN || canonical.endsWith(".$TEST_DOMAIN")
+  }
+
   /**
    * ¿El host consultado —o alguno de sus dominios padre— está bloqueado?
    * Bloquear `ejemplo.com` bloquea también `login.ejemplo.com`.

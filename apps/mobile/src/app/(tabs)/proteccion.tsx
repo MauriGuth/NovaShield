@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Link } from 'expo-router';
 
+import { ShieldTestCard } from '@/components/shield-test-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
@@ -234,7 +235,7 @@ export default function ProteccionScreen() {
                 <ThemedText type="small">
                   {Platform.OS === 'ios'
                     ? '1. Ajustes → tocá tu nombre (arriba de todo)\n2. iCloud → Retransmisión privada\n3. Apagala y volvé acá'
-                    : '1. Ajustes → Red e internet → DNS privado\n2. Elegí "Automático" (o "Desactivado")\n3. Volvé acá'}
+                    : '1. Ajustes → Conexiones → Más ajustes de conexión → DNS privado (en otros teléfonos: Ajustes → Red e internet → DNS privado)\n2. Elegí "Automático" (o "Desactivado")\n3. Volvé acá'}
                 </ThemedText>
                 <ThemedText type="small" themeColor="textSecondary">
                   {Platform.OS === 'ios'
@@ -258,6 +259,9 @@ export default function ProteccionScreen() {
               </ThemedText>
             )}
           </ThemedView>
+
+          {/* — Prueba del escudo — */}
+          {isShieldAvailable && canUseShield && <ShieldTestCard status={status} />}
 
           {/* — Lista de bloqueo — */}
           <ThemedView type="backgroundElement" style={styles.card}>

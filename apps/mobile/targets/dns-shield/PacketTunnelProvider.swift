@@ -57,6 +57,9 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
    */
   private var packetsSeen = 0
   private var queriesParsed = 0
+  private var lastDiagnosticsAt = Date.distantPast
+  /// Cada cuánto, como mínimo, se publica la foto aunque no se llegue a 10 paquetes.
+  private static let diagnosticsInterval: TimeInterval = 2
 
   /// Una única sesión UDP reutilizable hacia el resolver. Crear una sesión por
   /// consulta filtraba ~1 KB por resolución (el read handler retenía la sesión
@@ -160,6 +163,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
   /// Publica los contadores en el App Group para que la app los muestre.
   /// Solo números: ningún dominio sale de la extensión, ni siquiera a disco.
   private func publishDiagnostics() {
+    lastDiagnosticsAt = Date()
     guard let defaults = UserDefaults(suiteName: Self.appGroup) else { return }
     defaults.set(packetsSeen, forKey: "diagPackets")
     defaults.set(queriesParsed, forKey: "diagQueries")
@@ -207,7 +211,11 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     // pantalla: pedirle a alguien que abra Consola.app y filtre logs no es un
     // camino de soporte razonable, ni siquiera para nosotros mismos.
     // `type: .default` y no `.info`, porque Consola oculta los info por defecto.
-    if packetsSeen % 10 == 1 {
+    // El corte por tiempo importa para la prueba del escudo, que compara los
+    // contadores antes y después de unos segundos de uso.
+    if packetsSeen % 10 == 1
+      || Date().timeIntervalSince(lastDiagnosticsAt) > Self.diagnosticsInterval
+    {
       publishDiagnostics()
       os_log(
         "Diagnóstico · paquetes:%d consultas:%d bloqueos:%d lista:%d",
@@ -226,12 +234,27 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     }
     queriesParsed += 1
 
+    // La prueba del escudo: se contesta como un bloqueo, pero se cuenta aparte
+    // y avisa que la prueba funcionó (no "bloqueamos un sitio peligroso", que
+    // sería mentira).
+    if ShieldBlocklist.isTestDomain(query.domain) {
+      let response = DnsPacketParser.buildNxDomainResponse(for: query)
+      packetFlow.writePackets([response], withProtocols: [NSNumber(value: AF_INET)])
+      recordTestHit()
+      notifyTestPassed()
+      publishDiagnostics()
+      return
+    }
+
     if ShieldBlocklist.shared.isBlocked(query.domain) {
       blockedCount += 1
       persistBlocked(domain: query.domain)
       notifyBlocked(domain: query.domain)
       let response = DnsPacketParser.buildNxDomainResponse(for: query)
       packetFlow.writePackets([response], withProtocols: [NSNumber(value: AF_INET)])
+      // Foto al toque: si no, el contador del diagnóstico esperaba al próximo
+      // múltiplo de 10 paquetes.
+      publishDiagnostics()
       return
     }
 
@@ -367,6 +390,31 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     UNUserNotificationCenter.current().add(request) { [weak self] error in
       if let error, let self {
         os_log("No se pudo avisar del bloqueo: %{public}@", log: self.log, type: .error,
+               error.localizedDescription)
+      }
+    }
+  }
+
+  /// Cuenta una consulta de la prueba del escudo, aparte de los bloqueos: la
+  /// prueba no es un sitio peligroso y no puede inflar el "te protegimos".
+  private func recordTestHit() {
+    guard let defaults = UserDefaults(suiteName: Self.appGroup) else { return }
+    defaults.set(defaults.integer(forKey: "diagTestHits") + 1, forKey: "diagTestHits")
+  }
+
+  /// Aviso de la prueba. Una carga de página consulta A, AAAA y HTTPS: con el
+  /// mismo identificador la notificación se reemplaza en vez de repetirse.
+  private func notifyTestPassed() {
+    let content = UNMutableNotificationContent()
+    content.title = "La prueba del escudo funcionó"
+    content.body = "Frenamos la página de prueba: el escudo está filtrando este iPhone."
+    let request = UNNotificationRequest(
+      identifier: "shield-test",
+      content: content,
+      trigger: nil)
+    UNUserNotificationCenter.current().add(request) { [weak self] error in
+      if let error, let self {
+        os_log("No se pudo avisar de la prueba: %{public}@", log: self.log, type: .error,
                error.localizedDescription)
       }
     }

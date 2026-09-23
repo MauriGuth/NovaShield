@@ -92,6 +92,8 @@ export interface NovaShieldNative {
     queries?: number;
     blocked?: number;
     listCount?: number;
+    /** Consultas de la prueba del escudo que llegaron al túnel (ver shield-test.ts). */
+    testHits?: number;
     at?: number;
     lastError?: string | null;
   };

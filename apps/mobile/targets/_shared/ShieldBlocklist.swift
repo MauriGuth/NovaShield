@@ -70,6 +70,17 @@ public final class ShieldBlocklist {
     return data.count / Self.hashBytes
   }
 
+  /// Espejo de SHIELD_TEST_DOMAIN en packages/shared/src/shield.ts.
+  public static let testDomain = "prueba-escudo.novashield.test"
+
+  /// ¿Es la consulta de la prueba del escudo? Se reconoce por nombre, no por
+  /// la lista: la lista lleva solo dominios maliciosos, y la prueba tiene que
+  /// funcionar aunque la lista sea vieja.
+  public static func isTestDomain(_ host: String) -> Bool {
+    let canonical = canonicalDomain(host)
+    return canonical == testDomain || canonical.hasSuffix("." + testDomain)
+  }
+
   /// ¿El host consultado —o alguno de sus dominios padre— está bloqueado?
   /// Bloquear `ejemplo.com` bloquea también `login.ejemplo.com`.
   public func isBlocked(_ host: String) -> Bool {

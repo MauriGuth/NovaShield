@@ -264,7 +264,7 @@ export function computeScore(state: {
     score += 30;
   } else if (state.shieldBypassed) {
     pendingActions.push(
-      'El escudo está prendido pero tu DNS privado lo esquiva: Ajustes → Red e internet → DNS privado → Automático.',
+      'El escudo está prendido pero tu DNS privado lo esquiva: Ajustes → Conexiones → Más ajustes de conexión → DNS privado → Automático.',
     );
   } else if (state.shieldWanted) {
     pendingActions.push(

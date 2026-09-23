@@ -95,6 +95,8 @@ class DnsShieldVpnService : VpnService() {
       private set
 
     private const val BYPASS_NOTIFICATION_ID = 1002
+    private const val TEST_NOTIFICATION_ID = 1003
+    private const val DIAG_MIN_INTERVAL_MS = 2_000L
   }
 
   private var tunnel: ParcelFileDescriptor? = null
@@ -218,7 +220,12 @@ class DnsShieldVpnService : VpnService() {
 
     val descriptor = try {
       builder
-        // La propia app queda afuera: sus llamadas al backend no pasan por acá.
+        // La propia app queda afuera, y NO es un detalle: el callback de red
+        // (registerDefaultNetworkCallback) y activeLinkProperties() leen la
+        // red por defecto de ESTE uid. Si la app pasara por la VPN, verían el
+        // propio túnel, tomarían los alias como "DNS real" y el escudo se
+        // reenviaría las consultas a sí mismo. Por eso la prueba del escudo se
+        // hace desde el navegador y no desde la app.
         .addDisallowedApplication(packageName)
         // Sin esto, Android BLOQUEA todo el tráfico IPv6 del teléfono mientras
         // el túnel está activo: la documentación de VpnService.Builder dice que
@@ -275,8 +282,12 @@ class DnsShieldVpnService : VpnService() {
     stopSelf()
   }
 
+  @Volatile
+  private var lastDiagnosticsAt = 0L
+
   /** Foto de los contadores para que la app la muestre. Solo números y booleanos. */
   private fun publishDiagnostics() {
+    lastDiagnosticsAt = System.currentTimeMillis()
     ShieldBus.publishDiagnostics(
       this,
       packetsSeen,
@@ -332,13 +343,14 @@ class DnsShieldVpnService : VpnService() {
     }
     val notification = NotificationCompat.Builder(this, BLOCK_CHANNEL_ID)
       .setContentTitle("El escudo está prendido, pero tu DNS privado lo esquiva")
-      .setContentText("Ponelo en Automático: Ajustes → Red e internet → DNS privado.")
+      .setContentText("Ponelo en Automático, en los ajustes de DNS privado.")
       .setStyle(
         NotificationCompat.BigTextStyle().bigText(
           "Tu teléfono tiene un DNS privado con servidor fijo y manda las " +
             "consultas cifradas por fuera del escudo, así que no podemos " +
-            "frenar nada. Para arreglarlo: Ajustes → Red e internet → DNS " +
-            "privado → Automático.",
+            "frenar nada. Para arreglarlo: Ajustes → Conexiones → Más " +
+            "ajustes de conexión → DNS privado → Automático (en otros " +
+            "teléfonos: Ajustes → Red e internet → DNS privado).",
         ),
       )
       .setSmallIcon(android.R.drawable.stat_sys_warning)
@@ -440,11 +452,16 @@ class DnsShieldVpnService : VpnService() {
         if (length <= 0) continue
 
         packetsSeen++
-        // Cada 10 paquetes, una foto del estado. Sin esto, diagnosticar el
-        // escudo exige conectar el teléfono a una computadora y filtrar logcat;
-        // con estos números se ve desde la app si el DNS no entra al túnel, si
-        // entra y no se parsea, o si se parsea y no matchea.
-        if (packetsSeen % 10 == 1) publishDiagnostics()
+        // Cada 10 paquetes o cada 2 segundos, una foto del estado. Sin esto,
+        // diagnosticar el escudo exige conectar el teléfono a una computadora y
+        // filtrar logcat; con estos números se ve desde la app si el DNS no
+        // entra al túnel, si entra y no se parsea, o si se parsea y no matchea.
+        // El corte por tiempo importa para la prueba del escudo, que compara
+        // los contadores antes y después de unos segundos de uso.
+        val now = System.currentTimeMillis()
+        if (packetsSeen % 10 == 1 || now - lastDiagnosticsAt > DIAG_MIN_INTERVAL_MS) {
+          publishDiagnostics()
+        }
 
         // parseQuery copia lo que necesita: el buffer se reutiliza enseguida.
         val query = DnsPacket.parseQuery(buffer, length)
@@ -458,11 +475,25 @@ class DnsShieldVpnService : VpnService() {
 
         queriesParsed++
 
+        // La prueba del escudo: se contesta como un bloqueo, pero se cuenta
+        // aparte y avisa que la prueba funcionó (no "bloqueamos un sitio
+        // peligroso", que sería mentira).
+        if (Blocklist.isTestDomain(query.domain)) {
+          writePacket(output, DnsPacket.buildNxDomainResponse(query))
+          ShieldBus.recordTestHit(this)
+          notifyTestPassed()
+          publishDiagnostics()
+          continue
+        }
+
         if (Blocklist.isBlocked(query.domain)) {
           blockedInSession++
           ShieldBus.publishBlocked(this, query.domain)
           notifyBlocked(query.domain)
           writePacket(output, DnsPacket.buildNxDomainResponse(query))
+          // Foto al toque: si no, el contador de bloqueos del diagnóstico
+          // esperaba al próximo múltiplo de 10 paquetes.
+          publishDiagnostics()
           continue
         }
 
@@ -626,6 +657,33 @@ class DnsShieldVpnService : VpnService() {
    * producto más sirve se lee como una falla— y termina con el escudo apagado.
    * Pasó tal cual en iOS antes de agregar el aviso.
    */
+  /**
+   * Aviso de la prueba del escudo. Una carga de página consulta A, AAAA y
+   * HTTPS: la misma notificación (mismo id) se reemplaza y suena una sola vez.
+   */
+  private fun notifyTestPassed() {
+    val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    ensureBlockChannel(manager)
+    val openApp = packageManager.getLaunchIntentForPackage(packageName)?.let {
+      PendingIntent.getActivity(
+        this,
+        3,
+        it,
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+      )
+    }
+    val notification = NotificationCompat.Builder(this, BLOCK_CHANNEL_ID)
+      .setContentTitle("La prueba del escudo funcionó")
+      .setContentText("Frenamos la página de prueba: el escudo está filtrando este teléfono.")
+      .setSmallIcon(android.R.drawable.stat_sys_warning)
+      .setPriority(NotificationCompat.PRIORITY_HIGH)
+      .setOnlyAlertOnce(true)
+      .setAutoCancel(true)
+      .apply { openApp?.let { setContentIntent(it) } }
+      .build()
+    manager.notify(TEST_NOTIFICATION_ID, notification)
+  }
+
   private fun notifyBlocked(domain: String) {
     val now = System.currentTimeMillis()
     if (now - lastNotifyAt < NOTIFY_MIN_GAP_MS) return

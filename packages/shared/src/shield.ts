@@ -28,6 +28,22 @@ export interface BlocklistMetadata {
   sources: string[];
 }
 
+/**
+ * Dominio de prueba del escudo: la app lo consulta para verificar, en el
+ * teléfono real, que las consultas DNS llegan al túnel y se bloquean.
+ *
+ * Vive en `.test` (RFC 2606): nadie lo puede registrar, así que con el escudo
+ * roto la prueba no termina en ningún sitio real. El túnel lo reconoce por
+ * nombre (no está en la lista, que lleva SOLO dominios maliciosos), responde
+ * NXDOMAIN y suma un contador aparte que no se mezcla con los bloqueos reales.
+ * Se consulta con una etiqueta al azar adelante (`<nonce>.prueba-escudo…`)
+ * para que ninguna caché —del sistema, del navegador— conteste en su lugar.
+ *
+ * Está copiado en Blocklist.kt y en las dos copias de ShieldBlocklist.swift;
+ * native-parity.spec.ts verifica que coincidan.
+ */
+export const SHIELD_TEST_DOMAIN = 'prueba-escudo.novashield.test';
+
 /** Estado del Escudo DNS reportado por el módulo nativo. */
 export type ShieldStatus =
   | 'active'

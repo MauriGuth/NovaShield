@@ -196,6 +196,65 @@ describe('módulo Android · trampas que solo aparecen al compilar', () => {
     expect(sync).not.toMatch(/new File\(dir,/);
   });
 
+  it('el dominio de prueba del escudo es el mismo en TS, Kotlin y las dos copias de Swift', () => {
+    // Si divergen, la prueba del escudo de la app consulta un nombre que el
+    // túnel no reconoce: el resultado sería "tu navegador esquiva el escudo"
+    // con el escudo funcionando perfecto.
+    const shared = readFileSync(join(REPO_ROOT, 'packages/shared/src/shield.ts'), 'utf8');
+    const expected = /SHIELD_TEST_DOMAIN = '([^']+)'/.exec(shared)?.[1];
+    expect(expected).toMatch(/\.test$/); // reservado (RFC 2606): nadie lo puede registrar
+
+    const kotlin = readFileSync(
+      join(REPO_ROOT, ANDROID_MODULE, 'src/main/java/ar/com/novasolutions/novashield/Blocklist.kt'),
+      'utf8',
+    );
+    expect(/TEST_DOMAIN = "([^"]+)"/.exec(kotlin)?.[1]).toBe(expected);
+    for (const rel of COPIES) {
+      const swift = readFileSync(join(REPO_ROOT, rel), 'utf8');
+      expect(/testDomain = "([^"]+)"/.exec(swift)?.[1]).toBe(expected);
+    }
+  });
+
+  it('los dos túneles reconocen la prueba ANTES de mirar la lista', () => {
+    const kotlin = readFileSync(
+      join(REPO_ROOT, ANDROID_MODULE, 'src/main/java/ar/com/novasolutions/novashield/DnsShieldVpnService.kt'),
+      'utf8',
+    );
+    const swift = readFileSync(
+      join(REPO_ROOT, 'apps/mobile/targets/dns-shield/PacketTunnelProvider.swift'),
+      'utf8',
+    );
+    expect(kotlin.indexOf('Blocklist.isTestDomain(')).toBeGreaterThan(-1);
+    expect(kotlin.indexOf('Blocklist.isTestDomain(')).toBeLessThan(kotlin.indexOf('Blocklist.isBlocked('));
+    expect(swift.indexOf('ShieldBlocklist.isTestDomain(')).toBeGreaterThan(-1);
+    expect(swift.indexOf('ShieldBlocklist.isTestDomain(')).toBeLessThan(
+      swift.indexOf('ShieldBlocklist.shared.isBlocked('),
+    );
+  });
+
+  it('la app sigue excluida de su propio túnel en Android', () => {
+    // registerDefaultNetworkCallback y activeNetwork leen la red por defecto
+    // del uid de la app. Sin la exclusión verían el propio túnel, tomarían
+    // los alias como "DNS real" y el escudo se reenviaría a sí mismo.
+    const kotlin = readFileSync(
+      join(REPO_ROOT, ANDROID_MODULE, 'src/main/java/ar/com/novasolutions/novashield/DnsShieldVpnService.kt'),
+      'utf8',
+    );
+    expect(kotlin).toMatch(/\.addDisallowedApplication\(packageName\)/);
+    expect(kotlin).toMatch(/registerDefaultNetworkCallback/);
+  });
+
+  it('iOS no publica los estados de paso como "inactive" al releer', () => {
+    // getStatus() pide la lectura cada 200 ms mientras la app espera que el
+    // escudo confirme: una respuesta pedida en "conectando" que llega después
+    // de que el túnel quedó arriba pisaba el "active".
+    const swift = readFileSync(
+      join(REPO_ROOT, 'apps/mobile/modules/nova-shield/ios/NovaShieldModule.swift'),
+      'utf8',
+    );
+    expect(swift).toMatch(/case \.connecting, \.disconnecting, \.reasserting:\s*\n(\s*\/\/.*\n)*\s*return/);
+  });
+
   it('iOS relee el estado real del túnel al volver al frente', () => {
     // El observer de NEVPNStatusDidChange solo recibe cambios con la app viva:
     // si la extensión muere por memoria con la app cerrada, la clave del App

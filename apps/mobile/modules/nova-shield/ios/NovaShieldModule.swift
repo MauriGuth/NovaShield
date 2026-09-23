@@ -147,6 +147,8 @@ public class NovaShieldModule: Module {
         "queries": defaults.integer(forKey: "diagQueries"),
         "blocked": defaults.integer(forKey: "diagBlocked"),
         "listCount": defaults.integer(forKey: "diagListCount"),
+        // Consultas de la prueba del escudo que llegaron al túnel.
+        "testHits": defaults.integer(forKey: "diagTestHits"),
         "at": at,
       ]
     }
@@ -319,15 +321,25 @@ public class NovaShieldModule: Module {
    guardado se avisa por `onStatusChange`.
    */
   private func refreshTunnelStatus() {
-    NETunnelProviderManager.loadAllFromPreferences { [weak self] managers, _ in
-      guard let self else { return }
-      let status: String
-      if let connection = managers?.first?.connection {
-        status = Self.statusName(for: connection.status)
-      } else {
-        status = "inactive"
+    NETunnelProviderManager.loadAllFromPreferences { [weak self] managers, error in
+      // Si la lectura falla no se sabe nada: pisar el estado con "inactive"
+      // sería inventarlo.
+      guard let self, error == nil else { return }
+      guard let connection = managers?.first?.connection else {
+        self.publishStatus("inactive")
+        return
       }
-      self.publishStatus(status)
+      switch connection.status {
+      case .connecting, .disconnecting, .reasserting:
+        // Estados de paso: los resuelve el observer de NEVPNStatusDidChange.
+        // Publicarlos como "inactive" pisaba el "active" del túnel: esta
+        // lectura se pide en cada getStatus() —la app lo consulta cada 200 ms
+        // mientras espera que el escudo confirme— y una respuesta pedida en
+        // "conectando" podía llegar DESPUÉS de que el túnel quedara arriba.
+        return
+      default:
+        self.publishStatus(Self.statusName(for: connection.status))
+      }
     }
   }
 

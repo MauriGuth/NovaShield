@@ -204,7 +204,7 @@ export function describeStatus(status: ShieldStatus): {
       return {
         label: 'Escudo prendido, pero esquivado',
         detail:
-          'Tu teléfono tiene un DNS privado con servidor fijo y manda las consultas por fuera del escudo: ahora no podemos frenar nada. Ponelo en Automático: Ajustes → Red e internet → DNS privado.',
+          'Tu teléfono tiene un DNS privado con servidor fijo y manda las consultas por fuera del escudo: ahora no podemos frenar nada. Ponelo en Automático: Ajustes → Conexiones → Más ajustes de conexión → DNS privado (en otros teléfonos: Ajustes → Red e internet → DNS privado).',
       };
     case 'needs_permission':
       return {
